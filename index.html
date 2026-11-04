@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-Hant-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="健身教練">
+<title>健身教練</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="top">
+  <div>
+    <div class="top-title" id="topTitle">健身教練</div>
+    <div class="top-sub" id="topSub"></div>
+  </div>
+  <button class="icon-btn" data-act="openSettings" aria-label="設定">⚙︎</button>
+</header>
+
+<main id="app"></main>
+
+<div id="timer" class="timer hidden">
+  <div class="timer-label">休息</div>
+  <div class="timer-time" id="timerTime">0:00</div>
+  <button class="btn sm ghost" data-act="timerAdd" data-s="-15">−15</button>
+  <button class="btn sm ghost" data-act="timerAdd" data-s="15">+15</button>
+  <button class="btn sm" data-act="timerStop">跳過</button>
+</div>
+
+<nav class="tabs">
+  <button data-tab="today" class="tab"><span>🏠</span>今日</button>
+  <button data-tab="train" class="tab"><span>🏋️</span>訓練</button>
+  <button data-tab="activity" class="tab"><span>🚶</span>活動</button>
+  <button data-tab="progress" class="tab"><span>📈</span>進度</button>
+  <button data-tab="food" class="tab"><span>🥗</span>飲食</button>
+</nav>
+
+<div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-box" id="modalBox"></div>
+</div>
+<div id="toast" class="toast hidden"></div>
+
+<script src="js/config.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

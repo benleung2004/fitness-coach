@@ -1,0 +1,1245 @@
+/* 健身教練 v1 —— 所有資料只存喺呢部機（localStorage + IndexedDB 相片） */
+(function () {
+'use strict';
+const C = window.CONFIG;
+const KEY = 'fc_v1';
+const GYM_TYPES = ['gymA', 'gymB', 'd1', 'd2', 'd3'];
+
+// ---------- 小工具 ----------
+const pad = n => String(n).padStart(2, '0');
+const ds = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const pd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const today = () => ds(new Date());
+const addDays = (s, n) => { const d = pd(s); d.setDate(d.getDate() + n); return ds(d); };
+const diffDays = (a, b) => Math.round((pd(b) - pd(a)) / 864e5); // b - a
+const weekStart = s => { const d = pd(s); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return ds(d); };
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const num = v => { const n = parseFloat(v); return isNaN(n) ? null : n; };
+const sum = a => a.reduce((x, y) => x + y, 0);
+const avg = a => a.length ? sum(a) / a.length : null;
+const r1 = n => Math.round(n * 10) / 10;
+const $ = sel => document.querySelector(sel);
+const WD = ['日', '一', '二', '三', '四', '五', '六'];
+const fmtDate = s => { const d = pd(s); return `${d.getMonth() + 1}月${d.getDate()}日（${WD[d.getDay()]}）`; };
+const shortDate = s => { const d = pd(s); return `${d.getMonth() + 1}/${d.getDate()}`; };
+
+const ACT_KINDS = { walk: '行路', cycle: '踩單車', run: '跑步', hike: '行山', badminton: '羽毛球', recovery: '恢復／伸展', other: '其他' };
+const INTENSITY = { light: '輕鬆', moderate: '中等（微喘仲講到嘢）', vigorous: '劇烈（講唔到成句）' };
+const PAIN = { none: '冇', knee: '膝頭', back: '腰背', shoulder: '膊頭', wrist: '手腕' };
+
+// ---------- 資料 ----------
+function blank() {
+  return { profile: { onboarded: false, nickname: '', heightCm: '', startDate: today(), gfMode: false, phaseOverride: 'auto' },
+           days: {}, workouts: [], activities: [], body: [], achieved: {}, active: null, reviewSeen: '', noteForClaude: '', weather: null };
+}
+let S;
+try { S = Object.assign(blank(), JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { S = blank(); }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('儲存失敗：手機空間可能唔夠'); } }
+function day(d = today()) {
+  if (!S.days[d]) S.days[d] = { check: {}, waterMl: 0, steps: null, sleepH: null, protein: 0 };
+  return S.days[d];
+}
+
+let UI = { tab: 'today', editCheckin: false, strengthEx: 'legPress' };
+
+// ---------- 計算 ----------
+const gymWorkouts = () => S.workouts.filter(w => GYM_TYPES.includes(w.type)).sort((a, b) => a.date.localeCompare(b.date) || a.at - b.at);
+const lastGym = () => { const g = gymWorkouts(); return g[g.length - 1] || null; };
+function phase() {
+  if (S.profile.phaseOverride === '1') return 1;
+  if (S.profile.phaseOverride === '2') return 2;
+  const weeks = Math.floor(diffDays(S.profile.startDate, today()) / 7);
+  return (weeks >= C.rules.phase2MinWeeks && gymWorkouts().length >= C.rules.phase2MinGymSessions) ? 2 : 1;
+}
+const weekNo = () => Math.max(1, Math.floor(diffDays(S.profile.startDate, today()) / 7) + 1);
+function nextTemplate() {
+  const rot = C.phases[phase()].rotation;
+  const last = lastGym();
+  if (!last || !rot.includes(last.type)) return rot[0];
+  return rot[(rot.indexOf(last.type) + 1) % rot.length];
+}
+function cardioCredit(a) {
+  if (a.intensity === 'vigorous') return a.minutes * 2;
+  if (a.intensity === 'moderate') return a.minutes;
+  return 0;
+}
+function hasLog(d) {
+  const x = S.days[d];
+  const dayHas = x && (x.checkin || Object.values(x.check || {}).some(Boolean) || x.waterMl || x.steps || x.sleepH);
+  return !!(dayHas || S.workouts.some(w => w.date === d) || S.activities.some(a => a.date === d) || S.body.some(b => b.date === d));
+}
+function weekStats(ws) {
+  const we = addDays(ws, 6);
+  const inW = d => d >= ws && d <= we;
+  const dates = Array.from({ length: 7 }, (_, i) => addDays(ws, i));
+  const acts = S.activities.filter(a => inW(a.date));
+  const daysIn = dates.map(d => S.days[d]).filter(Boolean);
+  const steps = daysIn.map(x => x.steps).filter(v => v != null);
+  const sleep = daysIn.map(x => x.sleepH).filter(v => v != null);
+  const water = daysIn.map(x => x.waterMl).filter(v => v > 0);
+  const weights = S.body.filter(b => inW(b.date) && b.weight != null).map(b => b.weight);
+  return {
+    weekStart: ws,
+    gym: S.workouts.filter(w => inW(w.date) && GYM_TYPES.includes(w.type)).length,
+    home: S.workouts.filter(w => inW(w.date) && w.type === 'home').length,
+    cardio: sum(acts.map(cardioCredit)),
+    light: sum(acts.filter(a => a.intensity === 'light').map(a => a.minutes)),
+    logDays: dates.filter(hasLog).length,
+    avgSteps: steps.length ? Math.round(avg(steps)) : null,
+    avgSleep: sleep.length ? r1(avg(sleep)) : null,
+    avgWaterL: water.length ? r1(avg(water) / 1000) : null,
+    avgWeight: weights.length ? r1(avg(weights)) : null
+  };
+}
+function weeklySummaries(n = 12) {
+  const out = [];
+  let ws = weekStart(today());
+  for (let i = 0; i < n; i++) { out.unshift(weekStats(ws)); ws = addDays(ws, -7); }
+  for (let i = 1; i < out.length; i++) {
+    if (out[i].avgWeight != null && out[i - 1].avgWeight != null) out[i].weightChange = r1(out[i].avgWeight - out[i - 1].avgWeight);
+  }
+  out.forEach(w => {
+    w.adherence = Math.round(100 * (Math.min(w.gym / C.targets.gymMin, 1) * 0.5 + Math.min(w.cardio / C.targets.cardioMinutes, 1) * 0.3 + Math.min(w.logDays / C.targets.logDaysPerWeek, 1) * 0.2));
+    w.focus = weekFocus(w);
+  });
+  return out;
+}
+function weekFocus(w) {
+  if (w.gym < C.targets.gymMin) return `下週先做到 ${C.targets.gymMin} 次 gym：喺班表上揀兩日，當係約咗自己。`;
+  if (w.cardio < C.targets.cardioMinutes) return '加 1–2 次 30 分鐘快行或者行／踩返屋企，帶氧就夠。';
+  if (w.avgSleep != null && w.avgSleep < C.targets.sleepHours) return '瞓覺係下一步：輪班日盡量固定瞓覺時間，瞓前 1 小時少睇手機。';
+  if (w.avgWaterL != null && w.avgWaterL < C.targets.waterMl / 1000) return '飲水少咗：返工帶一支 1L 水樽，飲兩支就達標。';
+  if (w.gym < C.targets.gymIdeal) return '做得好！得閒可以試加第 3 次 gym。';
+  return '好穩定！保持呢個節奏就得。';
+}
+// ---------- 教練觀察：自動追蹤紀錄，判斷要唔要調整 ----------
+function adj() {
+  S.adjust = Object.assign({ skip: {}, deload: {}, shortDefault: false, shiftPref: {} }, S.adjust || {});
+  return S.adjust;
+}
+function repsFor(key) {
+  for (const w of Object.values(C.workouts)) { const s = w.exercises.find(x => x.key === key); if (s) return s.reps; }
+  return [8, 12];
+}
+function activityMix(days = 28) {
+  const since = addDays(today(), -days);
+  const m = {};
+  S.activities.filter(a => a.date > since).forEach(a => { m[a.kind] = m[a.kind] || { kind: a.kind, label: ACT_KINDS[a.kind] || a.kind, times: 0, minutes: 0 }; m[a.kind].times++; m[a.kind].minutes += a.minutes; });
+  const gym = S.workouts.filter(w => w.date > since && GYM_TYPES.includes(w.type)).length;
+  const home = S.workouts.filter(w => w.date > since && w.type === 'home').length;
+  if (gym) m.gym = { kind: 'gym', label: 'Gym', times: gym, minutes: sum(S.workouts.filter(w => w.date > since && GYM_TYPES.includes(w.type)).map(w => w.minutes || 45)) };
+  if (home) m.home = { kind: 'home', label: '屋企循環', times: home, minutes: home * C.homeCircuit.minutes };
+  const list = Object.values(m).sort((a, b) => b.minutes - a.minutes);
+  const planned = ['gym', 'walk', 'cycle'];
+  const missing = planned.filter(k => !m[k]).map(k => ({ gym: 'Gym', walk: '行路', cycle: '踩單車' }[k]));
+  return { days, list, missing };
+}
+function exerciseCompletion() {
+  const sessions = gymWorkouts().filter(w => !w.quick && (w.exercises || []).some(e => e.sets.some(s => s.done)));
+  const out = {};
+  sessions.forEach(w => w.exercises.forEach(e => {
+    const o = out[e.key] = out[e.key] || { key: e.key, name: C.exercises[e.key] ? C.exercises[e.key].name : e.key, planned: 0, done: 0, history: [] };
+    o.planned++;
+    const d = e.sets.filter(s => s.done);
+    if (d.length) o.done++;
+    if (!e.altUsed) o.history.push({ date: w.date, sets: d });
+  }));
+  return Object.values(out);
+}
+function insights() {
+  const t = today(), A = adj(), items = [];
+  const add = it => {
+    const seen = (S.insightSeen || {})[it.id];
+    if (seen && diffDays(seen, t) < 14) return;
+    items.push(it);
+  };
+  // 1. 每個動作：成日跳過／停滯／太辛苦／太輕鬆
+  exerciseCompletion().forEach(o => {
+    const ex = C.exercises[o.key]; if (!ex) return;
+    const recent = o.history.slice(-3);
+    const skipped = recent.filter(h => !h.sets.length).length;
+    if (recent.length >= 3 && skipped >= 2 && !A.skip[o.key]) {
+      add({ id: 'skip:' + o.key, level: 'adjust', title: `你成日跳過「${ex.name}」`, detail: `最近 3 次有 ${skipped} 次冇做。可以暫時由計劃移除，或者匯出叫 Claude 幫你換一個鍾意嘅動作。`, action: { type: 'skip', key: o.key }, actionLabel: '暫時移除' });
+    }
+    const done = o.history.filter(h => h.sets.length);
+    if (ex.unit !== 'kg' || !done.length) return;
+    const top = h => Math.max(...h.sets.map(s => s.w || 0));
+    const repsSum = h => sum(h.sets.map(s => s.r || 0));
+    const maxRpe = h => Math.max(0, ...h.sets.map(s => s.rpe || 0));
+    const [, hi] = repsFor(o.key);
+    const last2 = done.slice(-2), last3 = done.slice(-3), last = done[done.length - 1];
+    if (A.deload[o.key]) return;
+    if (last2.length === 2 && last2.every(h => maxRpe(h) >= 9)) {
+      const w = top(last);
+      add({ id: 'hard:' + o.key, level: 'adjust', title: `「${ex.name}」連續 2 次好辛苦（RPE 9+）`, detail: `新手唔使咁辛苦。建議下次減 10%（約 ${roundTo(w * 0.9, ex.inc)}kg），做好姿勢再慢慢加返。`, action: { type: 'deload', key: o.key }, actionLabel: '下次減 10%' });
+    } else if (last3.length === 3 && top(last3[0]) > 0 && last3.every(h => top(h) === top(last3[0])) && repsSum(last3[2]) <= repsSum(last3[0])) {
+      const w = top(last);
+      add({ id: 'stall:' + o.key, level: 'adjust', title: `「${ex.name}」連續 3 次冇進步`, detail: `一直停喺 ${w}kg。建議下次減 10%（約 ${roundTo(w * 0.9, ex.inc)}kg）做多啲下，再重新加上去；亦檢查吓瞓覺同蛋白質夠唔夠。`, action: { type: 'deload', key: o.key }, actionLabel: '下次減 10%' });
+    } else if (last.sets.every(s => (s.r || 0) >= hi) && maxRpe(last) > 0 && maxRpe(last) <= 6 && top(last) > 0) {
+      add({ id: 'easy:' + o.key, level: 'info', title: `「${ex.name}」上次好輕鬆（RPE ≤ 6）`, detail: '下次可以一次加多啲（大約 10%），加完 RPE 應該喺 7 左右。' });
+    }
+  });
+  // 2. 每週 gym 次數
+  const ws = weekStart(t);
+  const past = [1, 2, 3].map(i => weekStats(addDays(ws, -7 * i)));
+  const startedWeeks = past.filter(w => w.weekStart >= weekStart(S.profile.startDate));
+  if (startedWeeks.length === 3 && startedWeeks.every(w => w.gym < C.targets.gymMin) && !A.shortDefault) {
+    add({ id: 'shortDefault', level: 'adjust', title: '過去 3 週 gym 都未夠 2 次', detail: '唔緊要，代表計劃要遷就你。建議將 gym 預設改做 30 分鐘精簡版（頭 4 個動作），易啲出門口。', action: { type: 'shortDefault' }, actionLabel: '改用精簡版' });
+  }
+  if (startedWeeks.length === 3 && startedWeeks.every(w => w.gym >= C.targets.gymMin)) {
+    add({ id: 'goodStreak', level: 'good', title: '連續 3 週 gym 達標 👏', detail: phase() === 1 ? '你已經建立緊習慣。可以試吓每週加第 3 次。' : '保持！可以匯出叫 Claude 幫你計劃下一個階段。' });
+  }
+  // 3. 帶氧、步數、瞓覺
+  if (startedWeeks.length >= 2 && startedWeeks.slice(0, 2).every(w => w.cardio < C.targets.cardioMinutes / 2)) {
+    add({ id: 'cardioLow', level: 'info', title: '帶氧連續 2 週唔夠一半', detail: '最易嘅方法：放工行一段返屋企（20 分鐘），或者用單車代步。每次 10 分鐘都計。' });
+  }
+  const recentDays = Object.entries(S.days).filter(([d]) => d > addDays(t, -14) && d <= t);
+  const steps = recentDays.map(([, v]) => v.steps).filter(v => v != null);
+  if (steps.length >= 4 && avg(steps) < C.targets.stepsLow) {
+    add({ id: 'stepsLow', level: 'info', title: `近 2 週平均步數 ${Math.round(avg(steps))}`, detail: `目標 ${C.targets.stepsLow}+。返工坐得多，每個鐘起身行 2 分鐘，或者落早一個站行返屋企。` });
+  }
+  const sleepByShift = {};
+  Object.entries(S.days).filter(([d]) => d > addDays(t, -28)).forEach(([, v]) => {
+    if (v.checkin && v.sleepH != null) (sleepByShift[v.checkin.shift] = sleepByShift[v.checkin.shift] || []).push(v.sleepH);
+  });
+  Object.entries(sleepByShift).forEach(([sh, arr]) => {
+    if (arr.length >= 2 && avg(arr) < 6.5) add({ id: 'sleep:' + sh, level: 'info', title: `${C.shifts[sh] ? C.shifts[sh].name : sh}日平均淨係瞓 ${r1(avg(arr))} 小時`, detail: '瞓唔夠會影響增肌同食慾。呢啲日子優先瞓覺，運動做恢復模式就夠。' });
+  });
+  // 4. 痛症重複出現
+  const pains = {};
+  recentDays.forEach(([, v]) => { if (v.checkin && v.checkin.pain && v.checkin.pain !== 'none') pains[v.checkin.pain] = (pains[v.checkin.pain] || 0) + 1; });
+  Object.entries(pains).forEach(([p, n]) => {
+    if (n >= 3) add({ id: 'pain:' + p, level: 'warn', title: `近 2 週有 ${n} 日報${PAIN[p]}痛`, detail: '持續痛唔正常，建議睇醫生或者物理治療師。App 會繼續自動避開相關動作。' });
+  });
+  // 5. 邊個班次成日去唔到 gym
+  const byShift = {};
+  Object.entries(S.days).filter(([d]) => d > addDays(t, -28) && d < t).forEach(([d, v]) => {
+    if (v.rec !== 'gym' || !v.checkin) return;
+    const sh = v.checkin.shift;
+    const b = byShift[sh] = byShift[sh] || { rec: 0, miss: 0 };
+    b.rec++;
+    if (!S.workouts.some(w => w.date === d && GYM_TYPES.includes(w.type))) b.miss++;
+  });
+  Object.entries(byShift).forEach(([sh, b]) => {
+    if (b.miss >= 3 && b.miss / b.rec >= 0.6 && A.shiftPref[sh] !== 'cardio') {
+      const name = C.shifts[sh] ? C.shifts[sh].name : sh;
+      add({ id: 'shift:' + sh, level: 'adjust', title: `${name}日建議 gym，${b.rec} 次有 ${b.miss} 次冇去`, detail: `可能${name}真係唔方便。建議以後${name}日預設改做帶氧（行／踩返屋企），gym 留俾其他日子。`, action: { type: 'shiftPref', shift: sh }, actionLabel: `${name}改做帶氧` });
+    }
+  });
+  // 6. 紀錄太少
+  const logDays7 = Array.from({ length: 7 }, (_, i) => addDays(t, -i)).filter(hasLog).length;
+  if (S.profile.onboarded && diffDays(S.profile.startDate, t) >= 7 && logDays7 < 2) {
+    add({ id: 'logLow', level: 'info', title: '呢個禮拜得好少紀錄', detail: '唔使完美，每日開 App 撳一下清單就夠。紀錄越多，建議越準。' });
+  }
+  const order = { warn: 0, adjust: 1, info: 2, good: 3 };
+  return items.sort((a, b) => order[a.level] - order[b.level]);
+}
+function applyInsight(id) {
+  const it = insights().find(x => x.id === id);
+  if (!it || !it.action) return;
+  const A = adj(), a = it.action;
+  if (a.type === 'skip') A.skip[a.key] = today();
+  if (a.type === 'deload') A.deload[a.key] = today();
+  if (a.type === 'shortDefault') A.shortDefault = today();
+  if (a.type === 'shiftPref') A.shiftPref[a.shift] = 'cardio';
+  (S.adjustLog = S.adjustLog || []).push({ date: today(), id, title: it.title, action: a });
+  save();
+}
+function adjustList() {
+  const A = adj(), out = [];
+  Object.keys(A.skip).forEach(k => out.push({ k: 'skip:' + k, text: `已移除：${C.exercises[k] ? C.exercises[k].name : k}` }));
+  Object.keys(A.deload).forEach(k => out.push({ k: 'deload:' + k, text: `下次減 10%：${C.exercises[k] ? C.exercises[k].name : k}` }));
+  if (A.shortDefault) out.push({ k: 'shortDefault', text: 'Gym 預設用 30 分鐘精簡版' });
+  Object.keys(A.shiftPref).forEach(s => out.push({ k: 'shift:' + s, text: `${C.shifts[s] ? C.shifts[s].name : s}日預設做帶氧` }));
+  return out;
+}
+const LV = { warn: ['⚠️', 'warn'], adjust: ['🔧', 'warn'], info: ['💡', ''], good: ['🌟', 'ok'] };
+function insightHtml(it) {
+  return `<div class="list-item"><div class="grow"><div><span class="chip ${LV[it.level][1]}">${LV[it.level][0]}</span> <b>${esc(it.title)}</b></div>
+    <div class="small muted">${esc(it.detail)}</div>
+    <div class="row" style="margin-top:6px">${it.action ? `<button class="btn sm" data-act="applyInsight" data-id="${esc(it.id)}">${esc(it.actionLabel)}</button>` : ''}
+    <button class="btn sm ghost" data-act="dismissInsight" data-id="${esc(it.id)}">${it.action ? '唔使' : '收到'}</button></div></div></div>`;
+}
+
+// 連續達標週數（未完嘅本週唔會令 streak 斷）
+function weekStreak() {
+  let ws = weekStart(today()), n = 0;
+  if (weekStats(ws).gym >= C.targets.gymMin) n++;
+  ws = addDays(ws, -7);
+  while (weekStats(ws).gym >= C.targets.gymMin) { n++; ws = addDays(ws, -7); if (n > 520) break; }
+  return n;
+}
+function waterTarget(d = today()) {
+  const worked = S.workouts.some(w => w.date === d) || S.activities.some(a => a.date === d && a.minutes >= 30);
+  return worked ? C.targets.waterMlWorkout : C.targets.waterMl;
+}
+function autoChecks(d = today()) {
+  const x = day(d);
+  const acts = S.activities.filter(a => a.date === d);
+  return {
+    water: x.waterMl >= waterTarget(d),
+    protein: x.protein >= 2,
+    steps: x.steps != null && x.steps >= C.targets.stepsLow,
+    workout: S.workouts.some(w => w.date === d) || sum(acts.map(a => a.minutes)) >= 20,
+    sleep: x.sleepH != null && x.sleepH >= C.targets.sleepHours
+  };
+}
+
+// ---------- 動作處理（痛 → 替代） ----------
+function resolveEx(slotKey, pain) {
+  const ex = C.exercises[slotKey];
+  if (!pain || pain === 'none' || !ex.avoid.includes(pain)) return { key: slotKey };
+  const sub = ex.painSub[pain];
+  if (sub && !C.exercises[sub].avoid.includes(pain)) return { key: sub, from: slotKey };
+  return { key: null, from: slotKey };
+}
+function lastSetsFor(key) {
+  for (let i = S.workouts.length - 1; i >= 0; i--) {
+    const w = S.workouts[i];
+    const it = (w.exercises || []).find(e => e.key === key && !e.altUsed && e.sets.some(s => s.done));
+    if (it) return { date: w.date, sets: it.sets.filter(s => s.done) };
+  }
+  return null;
+}
+function roundTo(x, inc) { return Math.round(x / inc) * inc; }
+function progression(key, reps) {
+  const ex = C.exercises[key];
+  const last = lastSetsFor(key);
+  const [lo, hi] = reps;
+  const unitWord = ex.unit === 'sec' ? '秒' : '下';
+  if (!last) return { text: `第一次做：揀一個做到 ${hi}${unitWord} 仲有 3 下力嘅重量就啱。寧願輕啲，先學好動作。`, w: null };
+  const rs = last.sets.map(s => num(s.r) || 0);
+  const rpes = last.sets.map(s => num(s.rpe)).filter(v => v != null);
+  const maxRpe = rpes.length ? Math.max(...rpes) : 7;
+  const allTop = rs.every(r => r >= hi);
+  const anyLow = rs.some(r => r < lo);
+  if (ex.unit !== 'kg') {
+    if (allTop && maxRpe <= 8) return { text: `上次全部做到 ${hi}${unitWord}：今次每組加 ${ex.inc}${unitWord}，或者放慢動作。`, w: null };
+    return { text: `上次 ${rs.join(' / ')}${unitWord}：今次目標每組 ${hi}${unitWord}。`, w: null };
+  }
+  const w = Math.max(...last.sets.map(s => num(s.w) || 0));
+  if (allTop && maxRpe <= 8) {
+    const [p1, p2] = C.rules.progressWeightPct;
+    let nw = roundTo(w * (1 + p2 / 100), ex.inc);
+    if (nw > w * (1 + p2 / 100) + 0.01) nw -= ex.inc;
+    if (nw < w * (1 + p1 / 100) - 0.01 || nw <= w) nw = w + ex.inc;
+    return { text: `上次 ${w}kg 全部做足 ${hi} 下、RPE ≤ 8 👍 今次試 ${nw}kg，由 ${lo} 下開始再慢慢加。`, w: nw };
+  }
+  if (maxRpe >= 9.5 || anyLow) return { text: `上次 ${w}kg 幾辛苦（${rs.join('/')} 下，RPE ${maxRpe}）：今次保持 ${w}kg，專心做好姿勢。`, w };
+  return { text: `上次 ${w}kg：${rs.join(' / ')} 下。今次保持 ${w}kg，每組試加 1–2 下（目標 ${hi} 下）。`, w };
+}
+function warmupText(key, w) {
+  const ex = C.exercises[key];
+  if (ex.unit !== 'kg' || ex.type !== 'compound') return '';
+  if (!w || w < 15) return '熱身：用好輕重量做 1 組 × 10 下。';
+  return `熱身：${roundTo(w * 0.5, ex.inc)}kg × 8 下 → ${roundTo(w * 0.7, ex.inc)}kg × 5 下（唔計入正式組）。`;
+}
+const restSecs = key => ({ compound: 105, isolation: 75 }[C.exercises[key].type] || 60);
+
+// ---------- 天氣（香港天文台開放數據） ----------
+async function loadWeather() {
+  if (S.weather && Date.now() - S.weather.at < 30 * 60e3) return;
+  try {
+    const base = 'https://data.weather.gov.hk/weatherAPI/opendata/weather.php?lang=tc&dataType=';
+    const [now, warn] = await Promise.all([fetch(base + 'rhrread').then(r => r.json()), fetch(base + 'warnsum').then(r => r.json())]);
+    const temps = (now.temperature && now.temperature.data) || [];
+    const t = temps.find(x => x.place === '大埔') || temps.find(x => x.place === '香港天文台') || temps[0];
+    const h = now.humidity && now.humidity.data && now.humidity.data[0];
+    const warnings = Object.keys(warn || {}).map(k => ({ code: k, name: warn[k].name }));
+    S.weather = { at: Date.now(), temp: t ? t.value : null, place: t ? t.place : '', hum: h ? h.value : null, warnings };
+    save(); render();
+  } catch (e) { /* 冇網或者 API 失敗：照用冇天氣嘅建議 */ }
+}
+function weatherState() {
+  const w = S.weather;
+  if (!w || Date.now() - w.at > 6 * 3600e3) return { known: false, outdoorBad: false, runBad: false, text: '' };
+  const bad = w.warnings.filter(x => ['WRAIN', 'WTS', 'WTCSGNL', 'WHOT'].includes(x.code));
+  const hot = w.temp != null && w.temp >= C.rules.hotTempC;
+  const humid = w.hum != null && w.temp != null && w.hum >= C.rules.humidHumidity && w.temp >= 27;
+  return { known: true, outdoorBad: bad.length > 0 || hot, runBad: bad.length > 0 || hot || humid,
+           text: `${w.place} ${w.temp ?? '–'}°C · 濕度 ${w.hum ?? '–'}%${w.warnings.length ? ' · ⚠️ ' + w.warnings.map(x => x.name).join('、') : ''}` };
+}
+
+// ---------- 推薦引擎 ----------
+function recommend(ci) {
+  const t = today();
+  const wx = weatherState();
+  const ph = phase();
+  const ws = weekStats(weekStart(t));
+  const lg = lastGym();
+  const daysSinceGym = lg ? diffDays(lg.date, t) : null;
+  const shiftTip = C.shifts[ci.shift] ? C.shifts[ci.shift].tip : '';
+  const why = [];
+  const extra = [];
+  const minimum = '最低版本：行 10 分鐘 + 伸展 5 分鐘。做咗就算贏，唔使完美。';
+  const doneToday = S.workouts.some(w => w.date === t && GYM_TYPES.concat('home').includes(w.type));
+  if (ci.pain !== 'none') extra.push(C.painAdvice[ci.pain]);
+
+  if (ci.shift === 'sick') return { kind: 'rest', icon: '🛌', title: '今日休息', summary: '病咗就休息、飲水、瞓覺。好返之後用「回歸訓練」慢慢返嚟。', why: ['身體恢復比 streak 重要'], extra, minimum: '今日嘅最低版本：飲夠水、早啲瞓。' };
+  if (ci.shift === 'travel') return { kind: 'cardio', cardioKind: 'walk', minutes: 30, icon: '🧳', title: '旅行：行路就係運動', summary: '旅行行嘅路全部可以記做活動分鐘。返嚟之後照常繼續計劃，唔使內疚。', why: [shiftTip], extra, minimum };
+  if (doneToday) return { kind: 'done', icon: '✅', title: '今日已經練咗！', summary: '做得好。今日剩低嘅可以輕鬆行 10–20 分鐘、飲夠水、早啲瞓。', why: [], extra, minimum: '' };
+  if (ci.shift === 'night') return { kind: 'recovery', icon: '🌙', title: C.recovery.name, summary: '夜更前後唔做重訓。行 15–20 分鐘再伸展，之後優先瞓覺。', why: [shiftTip], extra, minimum: '最低版本：伸展 5 分鐘就去瞓。' };
+  if (ci.energy === 'low' || ci.sleepQ === 'bad') return { kind: 'recovery', icon: '🔋', title: C.recovery.name, summary: '今日精神或者睡眠唔夠好，做輕鬆版就得，聽日再嚟過。', why: [ci.energy === 'low' ? '你話今日好攰' : '尋晚瞓得唔好'], extra, minimum: '最低版本：伸展 5 分鐘。' };
+
+  const gymYesterday = lg && daysSinceGym === 1;
+  const isReturn = lg && daysSinceGym >= C.rules.returnAfterDays;
+  const tmpl = nextTemplate();
+  const commuteOk = ['early', 'middle'].includes(ci.shift) && !wx.outdoorBad && ci.energy !== 'low';
+  if (commuteOk) extra.push(`放工可以考慮行／踩單車返屋企（中大 → 大埔 ${C.rules.commuteKm} km），記得喺「活動」記錄，會計入帶氧。`);
+  if (wx.known) why.push('天氣：' + wx.text);
+
+  const cardio = (kind, mins, reason) => {
+    let k = kind;
+    if (k === 'run' && wx.runBad) { k = 'cycle'; why.push('天氣熱／濕，跑步改踩單車或者快行'); }
+    if (wx.outdoorBad && ['walk', 'cycle', 'run', 'hike'].includes(k)) {
+      return { kind: 'home', icon: '🏠', title: C.homeCircuit.name, summary: '天氣唔適合戶外，改做屋企循環（或者去健身室踩單車 30 分鐘）。', why: why.concat(reason || []), extra, minimum: '最低版本：做 1 輪循環。' };
+    }
+    const label = { walk: '快行', cycle: '踩單車', run: '跑行交替', hike: '行山' }[k] || '快行';
+    return { kind: 'cardio', cardioKind: k, minutes: mins, icon: k === 'cycle' ? '🚲' : '🚶', title: `${label} ${mins} 分鐘`, summary: `中等強度：微微喘氣、仲講到嘢。${ci.shift === 'rest' ? '' : shiftTip}`, why: why.concat(reason || []), extra, minimum };
+  };
+  const A = adj();
+  const gym = (reason, short) => {
+    const shortByCoach = !short && !!A.shortDefault;
+    short = short || shortByCoach;
+    const mode = isReturn ? 'return' : (short ? 'short' : 'normal');
+    const r = [reason];
+    if (isReturn) r.push(`隔咗 ${daysSinceGym} 日冇做 gym，今次用較輕嘅「回歸訓練」`);
+    if (short) r.push(shortByCoach ? '教練調整：預設做 30 分鐘精簡版（頭 4 個動作）' : '時間得 30 分鐘：做精簡版（頭 4 個動作）');
+    return { kind: 'gym', template: tmpl, mode, icon: '🏋️', title: (isReturn ? '回歸訓練：' : '') + C.workouts[tmpl].name,
+             summary: `${C.phases[ph].note} ${shiftTip}`, why: why.concat(r),
+             extra: extra.concat('康文署健身室：通常平日上晝同下晝較少人，盡量避開放工 6–9 點。'),
+             minimum: '最低版本：每個動作做 1 組，20 分鐘搞掂。' };
+  };
+
+  if (ci.time <= 15) {
+    if (ci.pref === 'home' || wx.outdoorBad) return { kind: 'home', icon: '🏠', title: '屋企 10 分鐘', summary: '屋企循環做 2 輪就得。', why: why.concat('時間得 15 分鐘'), extra, minimum: '最低版本：做 1 輪。' };
+    return cardio('walk', 15, '時間得 15 分鐘，行一圈都有用');
+  }
+  if (gymYesterday && ci.pref !== 'home') return cardio(ci.pref === 'cycle' ? 'cycle' : 'walk', Math.min(ci.time, 45), '琴日先做完 gym，今日畀肌肉恢復');
+  if (ci.pref === 'walk') return cardio('walk', Math.min(ci.time, 45), '你今日想行路');
+  if (ci.pref === 'cycle') return cardio('cycle', Math.min(ci.time, 45), '你今日想踩單車');
+  if (ci.pref === 'home') return { kind: 'home', icon: '🏠', title: C.homeCircuit.name, summary: C.homeCircuit.note, why: why.concat('你今日想喺屋企做'), extra, minimum: '最低版本：做 1 輪。' };
+  if (ci.pref === 'sport') {
+    if (S.profile.gfMode) return { kind: 'cardio', cardioKind: 'hike', minutes: Math.min(ci.time, 60), icon: '👫', title: '同女朋友一齊郁', summary: '可以一齊行山（例如大埔滘自然護理區）、沿海濱行或者一齊去 gym。', why: why.concat('女朋友模式開咗'), extra, minimum };
+    return cardio('hike', Math.min(ci.time, 60), '你今日想做戶外運動');
+  }
+  if (ci.pref === 'gym') {
+    if (ws.gym >= C.targets.gymIdeal) return cardio('walk', Math.min(ci.time, 45), `本週已經做咗 ${ws.gym} 次 gym，夠晒！今日做帶氧`);
+    return gym('你今日想去 gym', ci.time < 45);
+  }
+  // 「你幫我揀」
+  if (A.shiftPref[ci.shift] === 'cardio') return cardio('walk', Math.min(ci.time, 45), `教練調整：${C.shifts[ci.shift].name}日你通常去唔到 gym，改做帶氧`);
+  if (ws.gym < C.targets.gymIdeal && ci.time >= 30) {
+    const reason = ws.gym < C.targets.gymMin ? `本週做咗 ${ws.gym}/${C.targets.gymMin} 次 gym` : `本週已達最低目標，第 ${ws.gym + 1} 次係加分`;
+    if (ws.gym >= C.targets.gymMin && ws.cardio < C.targets.cardioMinutes) return cardio('walk', Math.min(ci.time, 45), `gym 已達標（${ws.gym} 次），帶氧仲差 ${C.targets.cardioMinutes - ws.cardio} 分鐘`);
+    return gym(reason, ci.time < 45);
+  }
+  if (ws.cardio < C.targets.cardioMinutes) return cardio('walk', Math.min(ci.time, 45), `本週帶氧 ${ws.cardio}/${C.targets.cardioMinutes} 分鐘`);
+  return cardio('walk', 20, '本週目標都達到晒，今日輕鬆行就好');
+}
+
+// ---------- 畫面 ----------
+function render() {
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === UI.tab));
+  $('#topTitle').textContent = S.profile.nickname ? `${S.profile.nickname} 嘅健身教練` : '健身教練';
+  $('#topSub').textContent = `${fmtDate(today())} · 第 ${weekNo()} 週 · 第 ${phase()} 階段`;
+  const views = { today: vToday, train: vTrain, activity: vActivity, progress: vProgress, food: vFood };
+  $('#app').innerHTML = views[UI.tab]();
+  if (UI.tab === 'progress') fillPhotos();
+}
+
+const opts = (name, map, cur) => `<div class="opts">${Object.entries(map).map(([k, v]) =>
+  `<button class="opt ${String(cur) === String(k) ? 'on' : ''}" data-act="pick" data-name="${name}" data-v="${k}">${v}</button>`).join('')}</div>`;
+
+function vOnboard() {
+  return `<div class="card hero">
+    <div class="big">你嘅目標唔係急住減重，而係建立每週 2–3 次穩定運動。</div>
+    <p class="muted">先填幾樣基本資料（只會存喺你部手機）。</p>
+    <label class="f">暱稱（可以唔填）<input id="obName" maxlength="20"></label>
+    <div class="grid2">
+      <label class="f">身高 cm<input id="obH" type="number" inputmode="decimal"></label>
+      <label class="f">而家體重 kg<input id="obW" type="number" inputmode="decimal" step="0.1"></label>
+    </div>
+    <label class="f">開始日期<input id="obStart" type="date" value="${today()}"></label>
+    <label class="row f"><input type="checkbox" id="obGf"> 女朋友有時會一齊做運動</label>
+    <button class="btn block" data-act="onboard">開始</button>
+  </div>`;
+}
+
+function vCheckin(ci) {
+  ci = ci || {};
+  const d = UI.draft || (UI.draft = Object.assign({ shift: '', energy: 'normal', sleepQ: 'ok', pain: 'none', time: 45, pref: 'any' }, ci));
+  return `<div class="card">
+    <h2>今日 30 秒問答</h2>
+    <div class="q"><div class="q-label">1. 今日班次</div>${opts('shift', Object.fromEntries(Object.entries(C.shifts).map(([k, v]) => [k, v.name])), d.shift)}</div>
+    <div class="q"><div class="q-label">2. 精神</div>${opts('energy', { low: '好攰', normal: '普通', high: '好有精神' }, d.energy)}</div>
+    <div class="q"><div class="q-label">3. 尋晚瞓得點</div>${opts('sleepQ', { bad: '差', ok: '一般', good: '好' }, d.sleepQ)}</div>
+    <div class="q"><div class="q-label">4. 有冇邊度痛</div>${opts('pain', PAIN, d.pain)}</div>
+    <div class="q"><div class="q-label">5. 有幾多時間</div>${opts('time', { 15: '15 分', 30: '30 分', 45: '45 分', 60: '60 分+' }, d.time)}</div>
+    <div class="q"><div class="q-label">6. 今日想做咩</div>${opts('pref', { any: '你幫我揀', gym: 'Gym', walk: '行路', cycle: '踩單車', home: '屋企', sport: S.profile.gfMode ? '行山／一齊郁' : '行山／戶外' }, d.pref)}</div>
+    <button class="btn block" data-act="submitCheckin">話我知今日做咩</button>
+  </div>`;
+}
+
+function vRec(rec) {
+  let body = '';
+  if (rec.kind === 'gym') {
+    const pain = (day().checkin || {}).pain;
+    let list = C.workouts[rec.template].exercises.filter(s => !adj().skip[s.key]);
+    if (rec.mode === 'short') list = list.slice(0, 4);
+    body = `<ul class="clean">${list.map(s => {
+      const r = resolveEx(s.key, pain);
+      if (!r.key) return `<li class="muted"><s>${esc(C.exercises[s.key].name)}</s>（今日略過）</li>`;
+      const sets = rec.mode === 'return' ? Math.max(1, s.sets - 1) : s.sets;
+      return `<li>${esc(C.exercises[r.key].name)} <span class="muted">${sets} × ${s.reps[0]}–${s.reps[1]}</span>${r.from ? ' <span class="chip warn">替代</span>' : ''}</li>`;
+    }).join('')}</ul>
+    <button class="btn block" data-act="startGym" data-t="${rec.template}" data-mode="${rec.mode}">開始訓練</button>`;
+  } else if (rec.kind === 'cardio') {
+    body = `<button class="btn block" data-act="logAct" data-kind="${rec.cardioKind}" data-min="${rec.minutes}">做完，記錄 ${rec.minutes} 分鐘</button>`;
+  } else if (rec.kind === 'recovery') {
+    body = `<ul class="clean">${C.recovery.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ul>
+    <button class="btn block" data-act="logRecovery">完成恢復</button>`;
+  } else if (rec.kind === 'home') {
+    body = `<ul class="clean">${C.homeCircuit.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ul><p class="small muted">${esc(C.homeCircuit.note)}</p>
+    <button class="btn block" data-act="logHome">做完，記錄</button>`;
+  } else if (rec.kind === 'cardio' || rec.kind === 'done') {
+    body = '';
+  }
+  return `<div class="card hero">
+    <div class="muted small">今日建議（只有一個）</div>
+    <div class="big">${rec.icon} ${esc(rec.title)}</div>
+    <p>${esc(rec.summary)}</p>
+    ${rec.why.filter(Boolean).length ? `<p class="small muted">原因：${rec.why.filter(Boolean).map(esc).join('；')}</p>` : ''}
+    ${body}
+    ${rec.minimum ? `<p class="small" style="margin-top:10px">🪫 ${esc(rec.minimum)}</p>` : ''}
+    ${rec.extra.length ? `<ul class="clean small muted">${rec.extra.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+    <div class="row" style="margin-top:8px"><button class="btn sm ghost" data-act="editCheckin">改答案</button></div>
+  </div>`;
+}
+
+function vToday() {
+  if (!S.profile.onboarded) return vOnboard();
+  const x = day();
+  const auto = autoChecks();
+  const ws = weekStats(weekStart(today()));
+  const items = [
+    ['water', '💧', '飲水', `${r1(x.waterMl / 1000)}/${waterTarget() / 1000}L`],
+    ['protein', '🍳', '蛋白質', `${x.protein}/3 餐`],
+    ['veg', '🥦', '蔬菜', ''],
+    ['steps', '👟', '步數', x.steps != null ? x.steps : `${C.targets.stepsLow}+`],
+    ['workout', '🏋️', '運動', ''],
+    ['sleep', '😴', '瞓覺', x.sleepH != null ? `${x.sleepH} 小時` : `${C.targets.sleepHours}h+`]
+  ];
+  let review = '';
+  const lastWs = addDays(weekStart(today()), -7);
+  if (S.reviewSeen !== lastWs && S.workouts.concat(S.activities).some(a => a.date < weekStart(today()))) {
+    const w = weekStats(lastWs);
+    review = `<div class="card"><h2>📅 上週回顧</h2>
+      <p>Gym ${w.gym} 次 · 帶氧 ${w.cardio} 分鐘 · 記錄 ${w.logDays} 日${w.avgSleep != null ? ` · 平均瞓 ${w.avgSleep}h` : ''}</p>
+      <p><b>下週重點：</b>${esc(weekFocus(w))}</p>
+      <button class="btn sm ghost" data-act="seenReview" data-w="${lastWs}">收到</button></div>`;
+  }
+  const ci = x.checkin;
+  let main;
+  if (!ci || UI.editCheckin) main = vCheckin(ci);
+  else {
+    const rec = recommend(ci);
+    // 記低今日建議咗咩，之後用嚟分析「建議咗但做唔到」嘅情況
+    if (rec.kind !== 'done' && x.rec !== rec.kind) { x.rec = rec.kind; save(); }
+    main = vRec(rec);
+  }
+  const wx = weatherState();
+  const ins = insights().filter(i => i.level !== 'info').slice(0, 2);
+  const insCard = ins.length ? `<div class="card"><div class="row between"><h2>🧠 教練觀察</h2><button class="btn sm ghost" data-tab="progress">睇全部</button></div>${ins.map(insightHtml).join('')}</div>` : '';
+  return `${review}${main}${insCard}
+  <div class="grid2" style="margin-bottom:12px">
+    <button class="btn blue" data-act="dunno">🤷 唔知今日做咩</button>
+    <button class="btn ghost" data-act="lowMode">🌙 好攰／夜更模式</button>
+  </div>
+  <div class="card">
+    <div class="row between"><h2>今日清單</h2><span class="small muted">撳一下就完成</span></div>
+    <div class="checks">${items.map(([k, ic, l, sub]) => {
+      const on = x.check[k] || auto[k];
+      return `<button class="check ${on ? 'on' : ''}" data-act="toggleCheck" data-k="${k}"><span class="ic">${ic}</span>${l}<span class="sub">${esc(sub)}</span></button>`;
+    }).join('')}</div>
+    <div class="grid2" style="margin-top:10px">
+      <label class="f">今日步數<input type="number" inputmode="numeric" data-field="steps" value="${x.steps ?? ''}" placeholder="例如 7000"></label>
+      <label class="f">尋晚瞓咗（小時）<input type="number" inputmode="decimal" step="0.5" data-field="sleepH" value="${x.sleepH ?? ''}" placeholder="例如 7"></label>
+    </div>
+  </div>
+  <div class="card">
+    <h2>快速記錄</h2>
+    <div class="quick">
+      <button class="btn ghost" data-act="quickGym">✅ Gym 做完</button>
+      <button class="btn ghost" data-act="logAct" data-kind="walk" data-min="30">🚶 行咗 30 分鐘</button>
+      <button class="btn ghost" data-act="logAct" data-kind="cycle" data-min="30" data-commute="1">🚲 踩單車返工／放工</button>
+      <button class="btn ghost" data-act="water2L">💧 飲咗 2L 水</button>
+      <button class="btn ghost" data-act="slept7">😴 瞓咗 7 粒鐘</button>
+      <button class="btn ghost" data-act="logAct" data-kind="walk" data-min="105" data-km="${C.rules.commuteKm}" data-commute="1">🏠 行返屋企</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>本週</h2>
+    ${progressLine('Gym', ws.gym, C.targets.gymMin, `次（理想 ${C.targets.gymIdeal}）`)}
+    ${progressLine('帶氧', ws.cardio, C.targets.cardioMinutes, '分鐘')}
+    ${progressLine('有記錄', ws.logDays, C.targets.logDaysPerWeek, '日')}
+    ${wx.known ? `<p class="small muted">🌤️ ${esc(wx.text)}</p>` : ''}
+  </div>`;
+}
+function progressLine(label, v, target, unit) {
+  const pct = Math.min(100, Math.round(100 * v / target));
+  return `<div style="margin:8px 0"><div class="row between small"><span>${label}</span><span>${v} / ${target} ${unit}${v >= target ? ' ✅' : ''}</span></div><div class="bar"><i style="width:${pct}%"></i></div></div>`;
+}
+
+// ---------- 訓練頁 ----------
+function vTrain() {
+  if (S.active) return vSession();
+  const ph = phase();
+  const gymN = gymWorkouts().length;
+  const next = nextTemplate();
+  const p2 = ph === 1 ? `<p class="small muted">升第 2 階段條件：開始滿 ${C.rules.phase2MinWeeks} 週（而家第 ${weekNo()} 週）＋ 完成 ${C.rules.phase2MinGymSessions} 次 gym（而家 ${gymN} 次）。冇時限，慢慢嚟。</p>` : '';
+  const tmplCard = k => {
+    const w = C.workouts[k];
+    return `<div class="card">
+      <div class="row between"><h2>${esc(w.name)}</h2>${k === next ? '<span class="chip ok">下一個</span>' : ''}</div>
+      <ul class="clean small">${w.exercises.map(s => `<li>${esc(C.exercises[s.key].name)} <span class="muted">${ph === 1 && w.phase === 2 ? 2 : s.sets} × ${s.reps[0]}–${s.reps[1]}${C.exercises[s.key].unit === 'sec' ? ' 秒' : ''}</span></li>`).join('')}</ul>
+      <button class="btn block ${k === next ? '' : 'ghost'}" data-act="startGym" data-t="${k}" data-mode="normal">開始 ${esc(w.name)}</button>
+    </div>`;
+  };
+  const other = ph === 1 ? ['d1', 'd2', 'd3'] : ['gymA', 'gymB'];
+  const hist = S.workouts.slice().sort((a, b) => b.date.localeCompare(a.date) || b.at - a.at).slice(0, 12);
+  return `<div class="card hero">
+      <div class="big">${esc(C.phases[ph].name)}</div>
+      <p>${esc(C.phases[ph].note)}</p>
+      <p class="small muted">每組休息：複合動作 90–120 秒，單關節／核心 60–90 秒。熱身 5–8 分鐘踩單車或快行，完咗伸展 5 分鐘。</p>
+      ${p2}
+    </div>
+    ${C.phases[ph].rotation.map(tmplCard).join('')}
+    <details class="card"><summary>睇${ph === 1 ? '第 2 階段' : '第 1 階段'}嘅訓練日</summary>${other.map(k => `<p><b>${esc(C.workouts[k].name)}</b>：${C.workouts[k].exercises.map(s => esc(C.exercises[s.key].name)).join('、')}</p>`).join('')}</details>
+    <div class="card"><h2>訓練紀錄</h2>
+      ${hist.length ? hist.map(w => `<div class="list-item"><div><b>${fmtDate(w.date)}</b> ${esc(workoutName(w))}<div class="small muted">${w.quick ? '快速記錄' : `${(w.exercises || []).filter(e => e.sets.some(s => s.done)).length} 個動作`}${w.minutes ? ` · ${w.minutes} 分鐘` : ''}${w.note ? ' · ' + esc(w.note) : ''}</div></div>
+        <button class="btn sm ghost" data-act="delWorkout" data-id="${w.id}">刪除</button></div>`).join('') : '<p class="muted">未有紀錄。第一次永遠最難，做完就係贏咗。</p>'}
+    </div>`;
+}
+const workoutName = w => (C.workouts[w.type] ? C.workouts[w.type].name : { home: '屋企循環', recovery: '恢復' }[w.type] || w.type) + (w.mode === 'return' ? '（回歸）' : w.mode === 'short' ? '（精簡）' : '');
+
+function startGym(t, mode) {
+  const pain = (day().checkin || {}).pain || 'none';
+  const ph = phase();
+  const A = adj();
+  let list = C.workouts[t].exercises.filter(s => !A.skip[s.key]);
+  if (mode === 'short') list = list.slice(0, 4);
+  const items = [];
+  list.forEach(s => {
+    const r = resolveEx(s.key, pain);
+    if (!r.key) return;
+    let sets = (ph === 1 && C.workouts[t].phase === 2) ? 2 : s.sets;
+    if (mode === 'return') sets = Math.max(1, sets - 1);
+    const prog = progression(r.key, s.reps);
+    let w = prog.w;
+    if (mode === 'return' && w) w = roundTo(w * 0.85, C.exercises[r.key].inc);
+    else if (A.deload[r.key] && w) w = roundTo(w * 0.9, C.exercises[r.key].inc);
+    items.push({ slot: s.key, key: r.key, subFrom: r.from || null, altUsed: false, reps: s.reps, note: '',
+                 sets: Array.from({ length: sets }, () => ({ w: w ?? '', r: '', rpe: '', done: false })) });
+  });
+  S.active = { id: uid(), type: t, mode, date: today(), startedAt: Date.now(), items, pain };
+  save(); UI.tab = 'train'; render(); window.scrollTo(0, 0);
+}
+
+function vSession() {
+  const a = S.active;
+  const ph = phase();
+  const rpeOpts = ['', 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
+  const mins = Math.round((Date.now() - a.startedAt) / 60000);
+  return `<div class="card hero">
+    <div class="big">${esc(workoutName({ type: a.type, mode: a.mode }))}</div>
+    <p class="small">目標 RPE ${a.mode === 'return' ? 6 : C.phases[ph].rpe}${ph === 1 ? '（頭 4 週唔好做到力竭）' : ''} · 已經 ${mins} 分鐘</p>
+    <p class="small muted">每組做完撳 ✓，會自動開始休息計時。RPE 10 = 一下都做唔到；7 = 仲有 3 下。</p>
+    ${a.pain && a.pain !== 'none' ? `<p class="small" style="color:var(--warn)">${esc(C.painAdvice[a.pain])}</p>` : ''}
+  </div>
+  <div class="card">${a.items.map((it, i) => {
+    const ex = C.exercises[it.key];
+    const prog = progression(it.key, it.reps);
+    if (adj().deload[it.key]) prog.text = '🔧 教練調整：今次減 10% 重量，專心做足次數同姿勢，之後再慢慢加返。';
+    const unit = ex.unit === 'sec' ? '秒' : '下';
+    const wPlaceholder = ex.unit === 'kg' ? 'kg' : '—';
+    return `<div class="ex">
+      <div class="row between"><div class="ex-name">${esc(ex.name)}</div>${it.subFrom ? '<span class="chip warn">因痛替代</span>' : ''}</div>
+      <div class="small muted">${it.sets.length} 組 × ${it.reps[0]}–${it.reps[1]} ${unit} · 休息 ${esc(ex.rest)}</div>
+      ${C.workouts[a.type].exercises.find(s => s.key === it.slot && s.note) ? `<div class="small muted">${esc(C.workouts[a.type].exercises.find(s => s.key === it.slot).note)}</div>` : ''}
+      <div class="sug">${esc(prog.text)}${warmupText(it.key, prog.w) ? '<br>' + esc(warmupText(it.key, prog.w)) : ''}</div>
+      <details><summary>姿勢提示／冇器材點算</summary><p class="small">✅ ${esc(ex.cue)}</p><p class="small">🔁 替代：${esc(ex.sub)}</p>
+        <label class="row small"><input type="checkbox" data-alt="${i}" ${it.altUsed ? 'checked' : ''}> 今次用咗替代動作（唔計入加重建議）</label></details>
+      <div class="sethead"><span>組</span><span>${ex.unit === 'kg' ? '重量 kg' : '—'}</span><span>${unit}數</span><span>RPE</span><span></span></div>
+      ${it.sets.map((s, j) => `<div class="setrow">
+        <span class="n">${j + 1}</span>
+        <input type="number" inputmode="decimal" step="0.5" placeholder="${wPlaceholder}" ${ex.unit === 'kg' ? '' : 'disabled'} data-set="${i},${j},w" value="${esc(s.w)}">
+        <input type="number" inputmode="numeric" placeholder="${it.reps[1]}" data-set="${i},${j},r" value="${esc(s.r)}">
+        <select data-set="${i},${j},rpe">${rpeOpts.map(v => `<option value="${v}" ${String(s.rpe) === String(v) ? 'selected' : ''}>${v === '' ? 'RPE' : v}</option>`).join('')}</select>
+        <button class="setbtn ${s.done ? 'on' : ''}" data-act="doneSet" data-i="${i}" data-j="${j}">✓</button>
+      </div>`).join('')}
+      <div class="row"><button class="btn sm ghost" data-act="addSet" data-i="${i}">＋ 加一組</button>
+        <input class="grow" placeholder="備註（例如：座位調第 4 格）" data-note="${i}" value="${esc(it.note)}" style="margin:0;padding:8px"></div>
+    </div>`;
+  }).join('')}</div>
+  <button class="btn block" data-act="finishGym">完成訓練 🎉</button>
+  <div style="height:8px"></div>
+  <button class="btn block danger" data-act="cancelGym">放棄今次（唔儲存）</button>`;
+}
+
+function finishGym() {
+  const a = S.active;
+  const done = a.items.some(it => it.sets.some(s => s.done));
+  if (!done && !confirm('未剔任何一組，都要儲存嗎？')) return;
+  const minutes = Math.max(1, Math.round((Date.now() - a.startedAt) / 60000));
+  S.workouts.push({ id: a.id, at: Date.now(), date: a.date, type: a.type, mode: a.mode, minutes, pain: a.pain,
+    exercises: a.items.map(it => ({ key: it.key, slot: it.slot, subFrom: it.subFrom, altUsed: it.altUsed, note: it.note,
+      sets: it.sets.map(s => ({ w: num(s.w), r: num(s.r), rpe: num(s.rpe), done: s.done })) })) });
+  const A = adj();
+  a.items.forEach(it => { if (A.deload[it.key] && it.sets.some(s => s.done)) delete A.deload[it.key]; });
+  S.active = null;
+  stopTimer();
+  save(); checkMilestones(); UI.tab = 'today'; render(); window.scrollTo(0, 0);
+  toast('訓練完成！記得飲水同食啲蛋白質 💪');
+}
+
+// ---------- 活動頁 ----------
+function vActivity() {
+  const ws = weekStats(weekStart(today()));
+  const runs = S.activities.filter(a => a.kind === 'run');
+  const longest = runs.length ? Math.max(...runs.map(a => a.minutes)) : 0;
+  const ready = longest >= C.rules.commuteRunReadyMinutes;
+  const wx = weatherState();
+  const list = S.activities.slice().sort((a, b) => b.date.localeCompare(a.date) || b.at - a.at).slice(0, 20);
+  return `<div class="card">
+    <h2>本週帶氧</h2>
+    ${progressLine('中等強度分鐘（劇烈 ×2）', ws.cardio, C.targets.cardioMinutes, '')}
+    <p class="small muted">輕鬆活動：${ws.light} 分鐘（唔計入 150，但一樣有用）。熱同濕嘅日子，踩單車或者快行好過跑步。</p>
+    ${wx.known ? `<p class="small muted">🌤️ ${esc(wx.text)}${wx.runBad ? ' → 今日唔建議戶外跑步' : ''}</p>` : ''}
+  </div>
+  <div class="card">
+    <h2>記錄活動</h2>
+    <div class="quick">
+      <button class="btn ghost" data-act="logAct" data-kind="walk" data-min="30">🚶 快行 30 分</button>
+      <button class="btn ghost" data-act="logAct" data-kind="cycle" data-min="30">🚲 踩單車 30 分</button>
+      <button class="btn ghost" data-act="logAct" data-kind="run" data-min="25" data-int="moderate">🏃 跑行交替 25 分</button>
+      <button class="btn ghost" data-act="logAct" data-kind="hike" data-min="60">⛰️ 行山</button>
+      <button class="btn ghost" data-act="logAct" data-kind="badminton" data-min="45">🏸 羽毛球</button>
+      <button class="btn ghost" data-act="logAct" data-kind="other" data-min="30">➕ 其他</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>🏠 ${esc(C.commute.title)}</h2>
+    <p class="small muted">中大 → 大埔屋企步行大約 ${C.rules.commuteKm} km。</p>
+    <ul class="clean small">${C.commute.options.map(o => `<li><b>${esc(o.level)}</b>：${esc(o.text)}</li>`).join('')}</ul>
+    <p class="small">跑步準備度：最長一次跑步記錄 <b>${longest} 分鐘</b> ${ready ? '✅ 可以考慮試跑成程（揀涼爽日子）' : `→ 要可以連續跑 ${C.rules.commuteRunReadyMinutes} 分鐘先試跑成程，之前用跑行交替`}</p>
+    <details><summary>安全同實用提示</summary><ul class="clean small">${C.commute.safety.map(s => `<li>${esc(s)}</li>`).join('')}</ul></details>
+    <div class="quick" style="margin-top:8px">
+      <button class="btn ghost" data-act="logAct" data-kind="walk" data-min="105" data-km="${C.rules.commuteKm}" data-commute="1">🚶 行返屋企</button>
+      <button class="btn ghost" data-act="logAct" data-kind="cycle" data-min="35" data-km="${C.rules.commuteKm}" data-commute="1">🚲 踩返屋企</button>
+      <button class="btn ghost" data-act="logAct" data-kind="run" data-min="50" data-km="${C.rules.commuteKm}" data-commute="1" data-int="vigorous">🏃 跑／跑行返屋企</button>
+      <button class="btn ghost" data-act="logAct" data-kind="walk" data-min="20" data-commute="1">🚶 行一段（落車後）</button>
+    </div>
+  </div>
+  <div class="card"><h2>最近活動</h2>
+    ${list.length ? list.map(a => `<div class="list-item"><div><b>${fmtDate(a.date)}</b> ${ACT_KINDS[a.kind] || a.kind}${a.commute ? '（通勤）' : ''} ${a.minutes} 分鐘
+      <div class="small muted">${esc(INTENSITY[a.intensity] || '')}${a.km ? ` · ${a.km} km` : ''}${a.note ? ' · ' + esc(a.note) : ''}</div></div>
+      <button class="btn sm ghost" data-act="delAct" data-id="${a.id}">刪除</button></div>`).join('') : '<p class="muted">未有紀錄。</p>'}
+  </div>`;
+}
+function actModal(o) {
+  const kinds = Object.entries(ACT_KINDS).map(([k, v]) => `<option value="${k}" ${k === o.kind ? 'selected' : ''}>${v}</option>`).join('');
+  const ints = Object.entries(INTENSITY).map(([k, v]) => `<option value="${k}" ${k === (o.int || 'moderate') ? 'selected' : ''}>${v}</option>`).join('');
+  modal(`<h2>記錄活動${o.commute ? '（通勤）' : ''}</h2>
+    ${o.commute ? '<p class="small muted">通勤都計帶氧！請填實際時間同強度。</p>' : ''}
+    <label class="f">類型<select id="aKind">${kinds}</select></label>
+    <div class="grid2"><label class="f">分鐘<input id="aMin" type="number" inputmode="numeric" value="${o.min || 30}"></label>
+    <label class="f">距離 km（可不填）<input id="aKm" type="number" inputmode="decimal" step="0.1" value="${o.km || ''}"></label></div>
+    <label class="f">強度<select id="aInt">${ints}</select></label>
+    <label class="f">日期<input id="aDate" type="date" value="${today()}"></label>
+    <label class="f">備註<input id="aNote" placeholder="例如：同女朋友、途經吐露港"></label>
+    <input type="hidden" id="aCommute" value="${o.commute ? 1 : ''}">
+    <div class="grid2"><button class="btn ghost" data-act="closeModal">取消</button><button class="btn" data-act="saveAct">儲存</button></div>`);
+}
+
+// ---------- 進度頁 ----------
+function vProgress() {
+  const weeks = weeklySummaries(12);
+  const cur = weeks[weeks.length - 1];
+  const lastWaist = S.body.filter(b => b.waist != null).sort((a, b) => a.date.localeCompare(b.date)).pop();
+  const waistDue = !lastWaist || diffDays(lastWaist.date, today()) >= C.targets.waistEveryDays;
+  const exKeys = [...new Set(S.workouts.flatMap(w => (w.exercises || []).filter(e => !e.altUsed && e.sets.some(s => s.done)).map(e => e.key)))];
+  if (!exKeys.includes(UI.strengthEx) && exKeys.length) UI.strengthEx = exKeys[0];
+  const ach = C.milestones.map(m => ({ ...m, on: !!S.achieved[m.id] }));
+  const steps = weeks.slice(-4).map(w => w.avgSteps).filter(v => v != null);
+  return `<div class="grid3" style="margin-bottom:12px">
+      <div class="stat"><div class="v">${cur.gym}</div><div class="l">本週 gym</div></div>
+      <div class="stat"><div class="v">${cur.cardio}</div><div class="l">本週帶氧分鐘</div></div>
+      <div class="stat"><div class="v">${weekStreak()}</div><div class="l">連續達標週</div></div>
+      <div class="stat"><div class="v">${gymWorkouts().length}</div><div class="l">總 gym 次數</div></div>
+      <div class="stat"><div class="v">${steps.length ? Math.round(avg(steps)) : '–'}</div><div class="l">近 4 週平均步數</div></div>
+      <div class="stat"><div class="v">${cur.adherence}%</div><div class="l">本週完成度</div></div>
+    </div>
+    ${vInsights()}
+    <div class="card">
+      <h2>身體數據</h2>
+      <p class="small muted">體重睇每週平均，唔好睇每日上落（飲水、食鹽都會令體重差 1kg）。${waistDue ? '<b style="color:var(--warn)">今週量一量腰圍吧（肚臍高度、呼氣後量）。</b>' : `下次量腰圍：${shortDate(addDays(lastWaist.date, C.targets.waistEveryDays))}`}</p>
+      <div class="grid2"><label class="f">體重 kg<input id="bW" type="number" inputmode="decimal" step="0.1"></label>
+      <label class="f">腰圍 cm<input id="bWaist" type="number" inputmode="decimal" step="0.5"></label></div>
+      <button class="btn block" data-act="saveBody">儲存今日</button>
+      <h3>每週平均體重</h3>${lineChart(weeks.map(w => ({ l: shortDate(w.weekStart), v: w.avgWeight })), 'kg')}
+      <h3>腰圍</h3>${lineChart(S.body.filter(b => b.waist != null).sort((a, b) => a.date.localeCompare(b.date)).slice(-12).map(b => ({ l: shortDate(b.date), v: b.waist })), 'cm')}
+    </div>
+    <div class="card"><h2>每週 gym 次數</h2>${barChart(weeks.map(w => ({ l: shortDate(w.weekStart), v: w.gym })), C.targets.gymMin)}
+      <h3>每週帶氧分鐘</h3>${barChart(weeks.map(w => ({ l: shortDate(w.weekStart), v: w.cardio })), C.targets.cardioMinutes)}</div>
+    <div class="card"><h2>力量進步</h2>
+      ${exKeys.length ? `<select data-act-change="strengthEx">${exKeys.map(k => `<option value="${k}" ${k === UI.strengthEx ? 'selected' : ''}>${esc(C.exercises[k].name)}</option>`).join('')}</select>
+      ${strengthChart(UI.strengthEx)}` : '<p class="muted">做完第一次 gym 就會見到圖表。</p>'}
+    </div>
+    <div class="card"><h2>🏅 里程碑</h2>${ach.map(m => `<div class="ms ${m.on ? '' : 'off'}">${m.on ? '🏅' : '⬜'} ${esc(m.text)}${m.on ? ` <span class="small muted">${shortDate(S.achieved[m.id])}</span>` : ''}</div>`).join('')}</div>
+    <div class="card"><h2>📷 進度相（只存喺呢部手機）</h2>
+      <p class="small muted">每 ${C.targets.photoEveryDays} 日影一次：正面、側面、背面，同一個位置同燈光。相片唔會匯出，亦唔會上傳。</p>
+      <div class="grid2"><select id="pAngle"><option value="front">正面</option><option value="side">側面</option><option value="back">背面</option></select>
+      <label class="btn ghost" style="margin-top:4px">選擇相片<input type="file" accept="image/*" id="pFile" class="hidden"></label></div>
+      <div id="photoBox" style="margin-top:10px"><p class="muted small">載入中…</p></div>
+    </div>
+    <div class="card"><h2>每週總結</h2>
+      <table class="t"><tr><th>週</th><th>Gym</th><th>帶氧</th><th>步數</th><th>瞓</th><th>體重</th></tr>
+      ${weeks.slice().reverse().filter(w => w.logDays).slice(0, 8).map(w => `<tr><td>${shortDate(w.weekStart)}</td><td>${w.gym}</td><td>${w.cardio}</td><td>${w.avgSteps ?? '–'}</td><td>${w.avgSleep ?? '–'}</td><td>${w.avgWeight ?? '–'}${w.weightChange != null ? `<br><span class="muted">${w.weightChange > 0 ? '+' : ''}${w.weightChange}</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">未有資料</td></tr>'}
+      </table></div>`;
+}
+function vInsights() {
+  const ins = insights();
+  const mix = activityMix(28);
+  const comp = exerciseCompletion().filter(o => o.planned >= 2);
+  const maxMin = Math.max(1, ...mix.list.map(m => m.minutes));
+  return `<div class="card"><h2>🧠 教練觀察（自動追蹤）</h2>
+    <p class="small muted">App 每次打開都會分析你嘅紀錄，見到需要調整就會喺度提你。撳「套用」即刻改計劃；想大改就匯出俾 Claude。</p>
+    ${ins.length ? ins.map(insightHtml).join('') : '<p class="small muted">暫時冇需要調整嘅地方，繼續保持 👍（紀錄越多，觀察越準）</p>'}
+    <h3>近 28 日做得多／做得少</h3>
+    ${mix.list.length ? mix.list.map(m => `<div style="margin:6px 0"><div class="row between small"><span>${esc(m.label)}</span><span>${m.times} 次 · ${m.minutes} 分鐘</span></div><div class="bar"><i style="width:${Math.round(100 * m.minutes / maxMin)}%"></i></div></div>`).join('') : '<p class="small muted">未有紀錄。</p>'}
+    ${mix.missing.length ? `<p class="small muted">近 28 日未做過：${mix.missing.map(esc).join('、')}</p>` : ''}
+    ${comp.length ? `<h3>動作完成率</h3>${comp.sort((a, b) => a.done / a.planned - b.done / b.planned).map(o => `<div class="row between small" style="padding:3px 0"><span>${esc(o.name)}</span><span class="${o.done / o.planned < 0.5 ? 'chip warn' : 'muted'}">${o.done}/${o.planned} 次</span></div>`).join('')}` : ''}
+  </div>`;
+}
+function strengthChart(key) {
+  const ex = C.exercises[key];
+  const pts = S.workouts.slice().sort((a, b) => a.date.localeCompare(b.date)).map(w => {
+    const e = (w.exercises || []).find(x => x.key === key && !x.altUsed);
+    if (!e) return null;
+    const done = e.sets.filter(s => s.done);
+    if (!done.length) return null;
+    const v = ex.unit === 'kg' ? Math.max(...done.map(s => s.w || 0)) : Math.max(...done.map(s => s.r || 0));
+    return { l: shortDate(w.date), v };
+  }).filter(Boolean).slice(-16);
+  return lineChart(pts, ex.unit === 'kg' ? 'kg（最重一組）' : ex.unit === 'sec' ? '秒' : '下');
+}
+function lineChart(pts, unit) {
+  const p = pts.filter(x => x.v != null);
+  if (p.length < 2) return `<p class="small muted">${p.length ? `目前：${p[0].v} ${unit}。` : ''}再多啲記錄就會畫到趨勢線。</p>`;
+  const W = 320, H = 140, L = 32, R = 8, T = 10, B = 22;
+  let lo = Math.min(...p.map(x => x.v)), hi = Math.max(...p.map(x => x.v));
+  if (hi - lo < 1) { lo -= 1; hi += 1; }
+  const x = i => L + (W - L - R) * i / (p.length - 1);
+  const y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+  const d = p.map((q, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(q.v).toFixed(1)}`).join('');
+  const step = Math.ceil(p.length / 6);
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(unit)} 趨勢">
+    <line x1="${L}" x2="${W - R}" y1="${y(hi)}" y2="${y(hi)}" stroke="var(--line)"/><line x1="${L}" x2="${W - R}" y1="${y(lo)}" y2="${y(lo)}" stroke="var(--line)"/>
+    <text x="2" y="${y(hi) + 3}">${r1(hi)}</text><text x="2" y="${y(lo) + 3}">${r1(lo)}</text>
+    <path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>
+    ${p.map((q, i) => `<circle cx="${x(i)}" cy="${y(q.v)}" r="3.5" fill="var(--accent)"><title>${q.l}: ${q.v}</title></circle>`).join('')}
+    ${p.map((q, i) => (i % step === 0 || i === p.length - 1) ? `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${q.l}</text>` : '').join('')}
+  </svg><p class="small muted" style="margin:0">單位：${esc(unit)} · 最新 ${p[p.length - 1].v}</p>`;
+}
+function barChart(pts, target) {
+  const W = 320, H = 130, L = 8, R = 8, T = 14, B = 22;
+  const hi = Math.max(target * 1.2, ...pts.map(p => p.v || 0), 1);
+  const bw = (W - L - R) / pts.length;
+  const y = v => T + (H - T - B) * (1 - v / hi);
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="每週數據">
+    <line x1="${L}" x2="${W - R}" y1="${y(target)}" y2="${y(target)}" stroke="var(--warn)" stroke-dasharray="4 4"/>
+    <text x="${W - R}" y="${y(target) - 3}" text-anchor="end">目標 ${target}</text>
+    ${pts.map((p, i) => `<rect x="${L + i * bw + 3}" y="${y(p.v || 0)}" width="${bw - 6}" height="${Math.max(0, H - B - y(p.v || 0))}" rx="3" fill="${(p.v || 0) >= target ? 'var(--accent)' : 'var(--blue)'}"><title>${p.l}: ${p.v}</title></rect>`).join('')}
+    ${pts.map((p, i) => i % 2 === pts.length % 2 ? '' : `<text x="${L + i * bw + bw / 2}" y="${H - 6}" text-anchor="middle">${p.l}</text>`).join('')}
+  </svg>`;
+}
+
+// ---------- 相片（IndexedDB，只存本機） ----------
+function idb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('fc_photos', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('photos', { keyPath: 'id' });
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+async function photoTx(mode, fn) {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('photos', mode); const st = tx.objectStore('photos');
+    const out = fn(st);
+    tx.oncomplete = () => res(out && out.result); tx.onerror = () => rej(tx.error);
+  });
+}
+async function shrink(file) {
+  const img = await createImageBitmap(file);
+  const scale = Math.min(1, 1080 / Math.max(img.width, img.height));
+  const c = document.createElement('canvas'); c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+}
+let photoUrls = [];
+async function fillPhotos() {
+  const box = $('#photoBox'); if (!box) return;
+  try {
+    const all = (await photoTx('readonly', st => st.getAll())) || [];
+    photoUrls.forEach(u => URL.revokeObjectURL(u)); photoUrls = [];
+    if (!all.length) { box.innerHTML = '<p class="muted small">未有相片。</p>'; return; }
+    const byDate = {};
+    all.forEach(p => { (byDate[p.date] = byDate[p.date] || {})[p.angle] = p; });
+    const dates = Object.keys(byDate).sort().reverse();
+    const names = { front: '正面', side: '側面', back: '背面' };
+    box.innerHTML = dates.map(d => `<p class="small"><b>${fmtDate(d)}</b></p><div class="photos">${['front', 'side', 'back'].map(a => {
+      const p = byDate[d][a];
+      if (!p) return `<figure><div style="aspect-ratio:3/4;border-radius:10px;background:var(--card2)"></div><figcaption>${names[a]}</figcaption></figure>`;
+      const u = URL.createObjectURL(p.blob); photoUrls.push(u);
+      return `<figure><img src="${u}" alt="${names[a]}"><figcaption>${names[a]} <a href="#" data-act="delPhoto" data-id="${p.id}" style="color:var(--danger)">刪</a></figcaption></figure>`;
+    }).join('')}</div>`).join('');
+  } catch (e) { box.innerHTML = '<p class="muted small">呢個瀏覽器唔支援相片儲存。</p>'; }
+}
+
+// ---------- 飲食頁 ----------
+function vFood() {
+  const x = day();
+  const tgt = waterTarget();
+  const N = C.nutrition;
+  return `<div class="card hero">
+    <h2>💧 今日飲水</h2>
+    <div class="big">${r1(x.waterMl / 1000)} / ${tgt / 1000} L</div>
+    <div class="bar"><i style="width:${Math.min(100, 100 * x.waterMl / tgt)}%"></i></div>
+    <p class="small muted">${tgt > C.targets.waterMl ? '今日有運動，目標多咗 0.5L。' : ''}一支 500ml 水樽 = 2 下「+250」。</p>
+    <div class="grid3"><button class="btn ghost" data-act="water" data-ml="-250">−250</button><button class="btn" data-act="water" data-ml="250">+250ml</button><button class="btn" data-act="water" data-ml="500">+500ml</button></div>
+  </div>
+  <div class="card"><h2>🍳 蛋白質（每餐一份）</h2>
+    <p class="small muted">唔使計卡路里。每餐有一份掌心大嘅蛋白質就得：${N.proteinFoods.map(esc).join('、')}。</p>
+    <div class="grid3">${[1, 2, 3].map(n => `<button class="check ${x.protein >= n ? 'on' : ''}" data-act="protein" data-n="${n}"><span class="ic">${['🌅', '☀️', '🌙'][n - 1]}</span>${['第 1 餐', '第 2 餐', '第 3 餐'][n - 1]}</button>`).join('')}</div>
+    <p class="small muted" style="margin-top:8px">${esc(N.shakeNote)}</p></div>
+  <div class="card"><h2>🥤 飲品換一換</h2>${N.drinkSwaps.map(([a, b]) => `<div class="list-item"><span>${esc(a)}</span><span>→ <b>${esc(b)}</b></span></div>`).join('')}</div>
+  <div class="card"><h2>🍜 出街食點揀</h2>${N.eatingOut.map(e => `<div class="list-item"><div><b>${esc(e.place)}</b><div class="small">${esc(e.tip)}</div></div></div>`).join('')}
+    <p class="small muted">每餐盡量加一份菜：叫「多菜」、加一碟油菜（走油），或者揀有菜嘅套餐。</p></div>
+  <div class="card"><p class="small muted">你體重本身正常，唔需要節食。目標係「多啲蛋白質 + 少啲甜飲」，肚腩會慢慢細，肌肉會慢慢多。</p></div>`;
+}
+
+// ---------- 設定 / 匯出 ----------
+function settingsModal() {
+  const p = S.profile;
+  modal(`<h2>設定</h2>
+    <label class="f">暱稱<input id="sName" value="${esc(p.nickname)}" maxlength="20"></label>
+    <div class="grid2"><label class="f">身高 cm<input id="sH" type="number" value="${esc(p.heightCm)}"></label>
+    <label class="f">開始日期<input id="sStart" type="date" value="${esc(p.startDate)}"></label></div>
+    <label class="row f"><input type="checkbox" id="sGf" ${p.gfMode ? 'checked' : ''}> 女朋友模式（建議一齊做嘅活動）</label>
+    <label class="f">訓練階段<select id="sPhase"><option value="auto" ${p.phaseOverride === 'auto' ? 'selected' : ''}>自動（建議）</option><option value="1" ${p.phaseOverride === '1' ? 'selected' : ''}>固定第 1 階段</option><option value="2" ${p.phaseOverride === '2' ? 'selected' : ''}>固定第 2 階段</option></select></label>
+    <button class="btn block" data-act="saveSettings">儲存設定</button>
+    <h3 style="margin-top:20px">🔧 目前嘅自動調整</h3>
+    ${adjustList().length ? adjustList().map(a => `<div class="list-item"><span class="small">${esc(a.text)}</span><button class="btn sm ghost" data-act="resetAdjust" data-k="${esc(a.k)}">還原</button></div>`).join('') : '<p class="small muted">未有。教練觀察建議調整時，你撳「套用」就會出現喺度。</p>'}
+    <h3 style="margin-top:20px">🤖 交俾 Claude 調整</h3>
+    <p class="small muted">匯出你所有紀錄（唔包括相片），連埋 App 自動分析出嚟嘅「教練觀察」、做得多／做得少、動作完成率。AirDrop 或者傳去 Mac 嘅 <code>Desktop/fitness-coach/logs/</code>，再喺 Claude Code 講「睇最新 log 幫我調整」。Claude 會睇晒全部紀錄，就算你乜都唔寫都會分析。</p>
+    <label class="f">想 Claude 特別幫你改咩？（可以唔填）<textarea id="sNote" placeholder="例如：中更好難去 gym，想改返工前 30 分鐘版本">${esc(S.noteForClaude)}</textarea></label>
+    <button class="btn block blue" data-act="exportClaude">📤 匯出俾 Claude（JSON）</button>
+    <div style="height:8px"></div>
+    <button class="btn block ghost" data-act="copySummary">📋 複製文字摘要（可以直接貼俾 Claude）</button>
+    <h3 style="margin-top:20px">備份</h3>
+    <p class="small muted">匯出嘅 JSON 亦都係備份。換手機或者清咗瀏覽器資料，用「匯入」攞返。</p>
+    <label class="btn block ghost">📥 匯入 JSON 備份<input type="file" accept="application/json,.json" id="importFile" class="hidden"></label>
+    <div style="height:16px"></div>
+    <button class="btn block danger" data-act="resetAll">清除全部資料</button>
+    <p class="small muted" style="text-align:center">版本 ${esc(C.version)}</p>
+    <button class="btn block ghost" data-act="closeModal">關閉</button>`);
+}
+function exportData() {
+  return {
+    app: 'fitness-coach', exportedAt: new Date().toISOString(), configVersion: C.version,
+    noteForClaude: S.noteForClaude,
+    current: { phase: phase(), week: weekNo(), nextTemplate: nextTemplate(), weekStreak: weekStreak() },
+    insights: insights().map(({ id, level, title, detail }) => ({ id, level, title, detail })),
+    activityMix: activityMix(28),
+    exerciseCompletion: exerciseCompletion().map(({ key, name, planned, done }) => ({ key, name, planned, done })),
+    adjustments: adj(), adjustLog: S.adjustLog || [], dismissedInsights: S.insightSeen || {},
+    weeklySummaries: weeklySummaries(12),
+    profile: S.profile, body: S.body, workouts: S.workouts, activities: S.activities, days: S.days, achieved: S.achieved
+  };
+}
+async function exportClaude() {
+  const json = JSON.stringify(exportData(), null, 2);
+  const name = `fitness-log-${today()}.json`;
+  const file = new File([json], name, { type: 'application/json' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; }
+  } catch (e) { if (e.name === 'AbortError') return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+function summaryText() {
+  const w = weeklySummaries(8).filter(x => x.logDays);
+  const recent = S.workouts.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6);
+  const lines = [`# 健身紀錄摘要（${today()}）`, `第 ${weekNo()} 週 · 第 ${phase()} 階段 · 總 gym ${gymWorkouts().length} 次 · 連續達標 ${weekStreak()} 週`, ''];
+  if (S.noteForClaude) lines.push(`## 我想調整`, S.noteForClaude, '');
+  const ins = insights();
+  if (ins.length) { lines.push('## App 自動觀察'); ins.forEach(i => lines.push(`- [${i.level}] ${i.title}：${i.detail}`)); lines.push(''); }
+  const mix = activityMix(28);
+  lines.push('## 近 28 日做得多／少', ...mix.list.map(m => `- ${m.label}: ${m.times} 次 / ${m.minutes} 分鐘`), mix.missing.length ? `- 未做過：${mix.missing.join('、')}` : '', '');
+  const al = adjustList();
+  if (al.length) lines.push('## 已套用嘅自動調整', ...al.map(a => '- ' + a.text), '');
+  lines.push('## 每週', '| 週一 | gym | 帶氧分 | 步數 | 瞓 | 水L | 體重 | 完成度 |', '|---|---|---|---|---|---|---|---|');
+  w.forEach(x => lines.push(`| ${x.weekStart} | ${x.gym} | ${x.cardio} | ${x.avgSteps ?? '-'} | ${x.avgSleep ?? '-'} | ${x.avgWaterL ?? '-'} | ${x.avgWeight ?? '-'} | ${x.adherence}% |`));
+  lines.push('', '## 最近訓練');
+  recent.forEach(r => {
+    lines.push(`- ${r.date} ${workoutName(r)}${r.minutes ? ` ${r.minutes}分鐘` : ''}${r.pain && r.pain !== 'none' ? ` 痛:${PAIN[r.pain]}` : ''}`);
+    (r.exercises || []).forEach(e => { const d = e.sets.filter(s => s.done); if (d.length) lines.push(`  - ${C.exercises[e.key].name}: ${d.map(s => `${s.w ?? ''}${s.w != null ? 'kg×' : ''}${s.r ?? '?'}@${s.rpe ?? '-'}`).join(', ')}${e.note ? `（${e.note}）` : ''}`); });
+  });
+  const ci = Object.entries(S.days).filter(([, v]) => v.checkin).sort().slice(-14);
+  if (ci.length) { lines.push('', '## 最近問答'); ci.forEach(([d, v]) => lines.push(`- ${d} ${C.shifts[v.checkin.shift]?.name || '-'} 精神:${v.checkin.energy} 瞓:${v.checkin.sleepQ} 痛:${PAIN[v.checkin.pain]} 時間:${v.checkin.time} 想做:${v.checkin.pref}`)); }
+  return lines.join('\n');
+}
+
+// ---------- 里程碑 ----------
+function checkMilestones() {
+  const g = gymWorkouts().length;
+  const hit = {
+    firstGym: g >= 1, gym10: g >= 10, gym20: g >= 20, gym30: g >= 30,
+    weeks4: weekStreak() >= 4,
+    cardio150: weeklySummaries(52).some(w => w.cardio >= C.targets.cardioMinutes),
+    firstCommute: S.activities.some(a => a.commute),
+    commuteRun: S.activities.some(a => a.commute && a.kind === 'run'),
+    log7: Object.keys(S.days).filter(hasLog).length >= 7,
+    log30: Object.keys(S.days).filter(hasLog).length >= 30
+  };
+  const fresh = C.milestones.filter(m => hit[m.id] && !S.achieved[m.id]);
+  fresh.forEach(m => { S.achieved[m.id] = today(); });
+  if (fresh.length) { save(); setTimeout(() => toast('🏅 新里程碑：' + fresh.map(m => m.text).join('、')), 600); }
+}
+
+// ---------- 計時器 ----------
+let timerEnd = 0, timerInt = null;
+function startTimer(secs) {
+  timerEnd = Date.now() + secs * 1000;
+  $('#timer').classList.remove('hidden', 'done');
+  clearInterval(timerInt); timerInt = setInterval(tick, 250); tick();
+}
+function tick() {
+  const left = Math.round((timerEnd - Date.now()) / 1000);
+  const v = Math.max(0, left);
+  $('#timerTime').textContent = `${Math.floor(v / 60)}:${pad(v % 60)}`;
+  if (left <= 0 && !$('#timer').classList.contains('done')) {
+    $('#timer').classList.add('done'); $('#timerTime').textContent = '可以做下一組！';
+    try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) {}
+    beep();
+    clearInterval(timerInt);
+  }
+}
+function stopTimer() { clearInterval(timerInt); $('#timer').classList.add('hidden'); }
+let actx;
+function beep() {
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.25].forEach(t => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.frequency.value = 880; g.gain.value = 0.15; o.connect(g); g.connect(actx.destination);
+      o.start(actx.currentTime + t); o.stop(actx.currentTime + t + 0.15);
+    });
+  } catch (e) {}
+}
+
+// ---------- 彈出 / 提示 ----------
+function modal(html) { $('#modalBox').innerHTML = html; $('#modal').classList.remove('hidden'); }
+function closeModal() { $('#modal').classList.add('hidden'); $('#modalBox').innerHTML = ''; }
+let toastT;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.add('hidden'), 2600); }
+
+function addActivity(a) {
+  S.activities.push(Object.assign({ id: uid(), at: Date.now() }, a));
+  save(); checkMilestones(); render();
+}
+
+// ---------- 事件 ----------
+const actions = {
+  pick(el) { UI.draft[el.dataset.name] = el.dataset.name === 'time' ? Number(el.dataset.v) : el.dataset.v; render(); },
+  submitCheckin() {
+    if (!UI.draft.shift) { toast('先揀今日班次'); return; }
+    day().checkin = Object.assign({}, UI.draft); UI.draft = null; UI.editCheckin = false; save(); render(); window.scrollTo(0, 0);
+  },
+  editCheckin() { UI.editCheckin = true; UI.draft = null; render(); },
+  onboard() {
+    const w = num($('#obW').value);
+    S.profile.nickname = $('#obName').value.trim();
+    S.profile.heightCm = num($('#obH').value) || '';
+    S.profile.startDate = $('#obStart').value || today();
+    S.profile.gfMode = $('#obGf').checked;
+    S.profile.onboarded = true;
+    if (w) S.body.push({ id: uid(), date: today(), weight: w, waist: null });
+    save(); render();
+  },
+  dunno() {
+    const ci = day().checkin || { shift: 'rest', energy: 'normal', sleepQ: 'ok', pain: 'none', time: 45, pref: 'any' };
+    const rec = recommend(ci);
+    modal(`<div class="muted small">${day().checkin ? '根據你今日嘅答案' : '你未答今日問題，當你休息日、精神普通、有 45 分鐘'}</div>
+      <div class="big" style="font-size:22px;font-weight:800;margin:8px 0">${rec.icon} ${esc(rec.title)}</div>
+      <p>${esc(rec.summary)}</p>${rec.minimum ? `<p class="small">🪫 ${esc(rec.minimum)}</p>` : ''}
+      ${rec.kind === 'gym' ? `<button class="btn block" data-act="startGym" data-t="${rec.template}" data-mode="${rec.mode}">開始</button>` : ''}
+      ${rec.kind === 'cardio' ? `<button class="btn block" data-act="logAct" data-kind="${rec.cardioKind}" data-min="${rec.minutes}">做完，記錄</button>` : ''}
+      <div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">好，去做！</button>`);
+  },
+  lowMode() {
+    modal(`<h2>🌙 ${esc(C.recovery.name)}</h2><p class="small muted">${esc(C.recovery.note)}</p>
+      ${C.recovery.steps.map((s, i) => `<label class="row" style="padding:8px 0;border-top:1px solid var(--line)"><input type="checkbox"> ${esc(s)}</label>`).join('')}
+      <div class="grid2" style="margin-top:12px"><button class="btn ghost" data-act="closeModal">關閉</button><button class="btn" data-act="logRecovery">完成</button></div>`);
+  },
+  logRecovery() { closeModal(); addActivity({ date: today(), kind: 'recovery', minutes: 15, intensity: 'light', note: '恢復模式' }); toast('做得好，去休息啦 🌙'); },
+  logHome() {
+    S.workouts.push({ id: uid(), at: Date.now(), date: today(), type: 'home', minutes: C.homeCircuit.minutes, exercises: [] });
+    save(); checkMilestones(); render(); toast('屋企訓練完成 💪');
+  },
+  toggleCheck(el) {
+    const k = el.dataset.k, x = day();
+    const auto = autoChecks()[k];
+    if (auto && !x.check[k]) { toast('已經自動完成咗 ✅'); return; }
+    x.check[k] = !x.check[k]; save(); render();
+  },
+  quickGym() {
+    const t = nextTemplate();
+    if (!confirm(`記錄「${C.workouts[t].name}」已完成？（冇逐組記錄，唔會計入加重建議）`)) return;
+    S.workouts.push({ id: uid(), at: Date.now(), date: today(), type: t, quick: true, exercises: [] });
+    save(); checkMilestones(); render(); toast('Gym 完成 ✅');
+  },
+  water2L() { const x = day(); x.waterMl = Math.max(x.waterMl, 2000); save(); render(); toast('💧 已記錄 2L'); },
+  slept7() { day().sleepH = 7; save(); render(); toast('😴 已記錄 7 小時'); },
+  water(el) { const x = day(); x.waterMl = Math.max(0, x.waterMl + Number(el.dataset.ml)); save(); render(); },
+  protein(el) { const x = day(); const n = Number(el.dataset.n); x.protein = x.protein === n ? n - 1 : n; save(); render(); },
+  applyInsight(el) { applyInsight(el.dataset.id); render(); toast('已調整計劃，可以喺設定還原'); },
+  dismissInsight(el) { (S.insightSeen = S.insightSeen || {})[el.dataset.id] = today(); save(); render(); },
+  resetAdjust(el) {
+    const A = adj(), [type, k] = el.dataset.k.split(':');
+    if (type === 'skip') delete A.skip[k];
+    if (type === 'deload') delete A.deload[k];
+    if (type === 'shortDefault') A.shortDefault = false;
+    if (type === 'shift') delete A.shiftPref[k];
+    save(); settingsModal(); render(); toast('已還原');
+  },
+  seenReview(el) { S.reviewSeen = el.dataset.w; save(); render(); },
+  startGym(el) {
+    closeModal();
+    if (S.active && !confirm('有一個未完成嘅訓練，要放棄佢重新開始？')) { UI.tab = 'train'; render(); return; }
+    startGym(el.dataset.t, el.dataset.mode || 'normal');
+  },
+  doneSet(el) {
+    const it = S.active.items[el.dataset.i], s = it.sets[el.dataset.j];
+    s.done = !s.done;
+    if (s.done && s.r === '') s.r = it.reps[1];
+    save(); render();
+    if (s.done) startTimer(restSecs(it.key));
+  },
+  addSet(el) { const it = S.active.items[el.dataset.i]; const l = it.sets[it.sets.length - 1]; it.sets.push({ w: l ? l.w : '', r: '', rpe: '', done: false }); save(); render(); },
+  finishGym,
+  cancelGym() { if (confirm('確定放棄？今次記錄唔會儲存。')) { S.active = null; stopTimer(); save(); render(); } },
+  delWorkout(el) { if (confirm('刪除呢個訓練紀錄？')) { S.workouts = S.workouts.filter(w => w.id !== el.dataset.id); save(); render(); } },
+  delAct(el) { if (confirm('刪除呢個活動？')) { S.activities = S.activities.filter(a => a.id !== el.dataset.id); save(); render(); } },
+  logAct(el) { closeModal(); actModal({ kind: el.dataset.kind, min: el.dataset.min, km: el.dataset.km, commute: !!el.dataset.commute, int: el.dataset.int }); },
+  saveAct() {
+    const minutes = num($('#aMin').value);
+    if (!minutes || minutes <= 0) { toast('請填分鐘'); return; }
+    const a = { date: $('#aDate').value || today(), kind: $('#aKind').value, minutes, intensity: $('#aInt').value,
+                km: num($('#aKm').value), commute: !!$('#aCommute').value, note: $('#aNote').value.trim() };
+    closeModal(); addActivity(a); toast(`已記錄 ${minutes} 分鐘 👍`);
+  },
+  saveBody() {
+    const w = num($('#bW').value), waist = num($('#bWaist').value);
+    if (w == null && waist == null) { toast('填體重或者腰圍'); return; }
+    const ex = S.body.find(b => b.date === today());
+    if (ex) { if (w != null) ex.weight = w; if (waist != null) ex.waist = waist; }
+    else S.body.push({ id: uid(), date: today(), weight: w, waist });
+    save(); render(); toast('已儲存');
+  },
+  async delPhoto(el) { if (confirm('刪除呢張相？')) { await photoTx('readwrite', st => st.delete(el.dataset.id)); fillPhotos(); } },
+  openSettings() { settingsModal(); },
+  closeModal,
+  saveSettings() {
+    const p = S.profile;
+    p.nickname = $('#sName').value.trim(); p.heightCm = num($('#sH').value) || '';
+    p.startDate = $('#sStart').value || p.startDate; p.gfMode = $('#sGf').checked; p.phaseOverride = $('#sPhase').value;
+    S.noteForClaude = $('#sNote').value.trim();
+    save(); closeModal(); render(); toast('已儲存設定');
+  },
+  exportClaude() { S.noteForClaude = $('#sNote').value.trim(); save(); exportClaude(); },
+  async copySummary() {
+    S.noteForClaude = $('#sNote').value.trim(); save();
+    try { await navigator.clipboard.writeText(summaryText()); toast('已複製，可以貼俾 Claude'); }
+    catch (e) { modal(`<h2>摘要</h2><textarea style="min-height:50vh">${esc(summaryText())}</textarea><button class="btn block ghost" data-act="closeModal">關閉</button>`); }
+  },
+  resetAll() {
+    if (!confirm('會清除呢部機所有紀錄（相片除外）。建議先匯出備份。確定？')) return;
+    if (!confirm('真係確定？呢個動作冇得還原。')) return;
+    localStorage.removeItem(KEY); S = blank(); closeModal(); render();
+  },
+  timerAdd(el) { timerEnd += Number(el.dataset.s) * 1000; if ($('#timer').classList.contains('done')) { $('#timer').classList.remove('done'); clearInterval(timerInt); timerInt = setInterval(tick, 250); } tick(); },
+  timerStop() { stopTimer(); }
+};
+
+document.addEventListener('click', e => {
+  const tab = e.target.closest('[data-tab]');
+  if (tab) { UI.tab = tab.dataset.tab; UI.editCheckin = false; render(); window.scrollTo(0, 0); return; }
+  const el = e.target.closest('[data-act]');
+  if (!el || el.tagName === 'SELECT') return;
+  if (el.tagName === 'A') e.preventDefault();
+  const fn = actions[el.dataset.act];
+  if (fn) fn(el);
+});
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
+
+document.addEventListener('change', async e => {
+  const t = e.target;
+  if (t.dataset.set) { setField(t); return; }
+  if (t.dataset.alt != null) { S.active.items[t.dataset.alt].altUsed = t.checked; save(); return; }
+  if (t.dataset.actChange === 'strengthEx') { UI.strengthEx = t.value; render(); return; }
+  if (t.dataset.field) {
+    const v = num(t.value); const x = day(); x[t.dataset.field] = v; save(); render(); return;
+  }
+  if (t.id === 'pFile' && t.files[0]) {
+    try {
+      const blob = await shrink(t.files[0]);
+      await photoTx('readwrite', st => st.put({ id: uid(), date: today(), angle: $('#pAngle').value, blob }));
+      toast('相片已存（只喺呢部機）'); fillPhotos();
+    } catch (err) { toast('存唔到相片'); }
+    t.value = '';
+    return;
+  }
+  if (t.id === 'importFile' && t.files[0]) {
+    try {
+      const d = JSON.parse(await t.files[0].text());
+      if (d.app !== 'fitness-coach' || !Array.isArray(d.workouts)) throw new Error('格式唔啱');
+      if (!confirm(`匯入 ${d.exportedAt ? d.exportedAt.slice(0, 10) : ''} 嘅備份？會取代呢部機現有紀錄。`)) return;
+      S = Object.assign(blank(), { profile: d.profile, body: d.body || [], workouts: d.workouts, activities: d.activities || [], days: d.days || {}, achieved: d.achieved || {}, noteForClaude: d.noteForClaude || '', adjust: d.adjustments || null, adjustLog: d.adjustLog || [], insightSeen: d.dismissedInsights || {} });
+      save(); closeModal(); render(); toast('匯入完成');
+    } catch (err) { toast('匯入失敗：' + err.message); }
+  }
+});
+// 訓練輸入：打字時即時儲存（唔重畫，避免收起鍵盤）
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.dataset.set) setField(t, true);
+  if (t.dataset.note != null && S.active) { S.active.items[t.dataset.note].note = t.value; save(); }
+});
+function setField(t) {
+  if (!S.active) return;
+  const [i, j, f] = t.dataset.set.split(',');
+  S.active.items[i].sets[j][f] = t.value; save();
+}
+
+// ---------- 啟動 ----------
+if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+render();
+checkMilestones();
+loadWeather();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { render(); loadWeather(); } });
+})();
