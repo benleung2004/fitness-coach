@@ -1,5 +1,5 @@
 // 離線快取：網絡優先（Claude 改完 code 上載後，手機有網就會攞到新版）
-const CACHE_VERSION = 'fc-v2';
+const CACHE_VERSION = 'fc-v3';
 const FILES = ['./', 'index.html', 'css/style.css', 'js/config.js', 'js/app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE_VERSION).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => {

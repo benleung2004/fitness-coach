@@ -2,6 +2,15 @@
 
 用戶喺手機用「設定 → 匯出俾 Claude」，將 `fitness-log-YYYY-MM-DD.json` 放入 `logs/`，然後叫 Claude「睇最新 log 幫我調整」。
 
+## 攞最新資料
+手機開咗同步之後，最新資料喺**私人** repo `benleung2004/fitness-data` 嘅 `data/fitness.json`（格式同匯出 JSON 一樣）。用呢個指令攞落 `logs/`，唔使用戶 AirDrop：
+
+```bash
+gh api repos/benleung2004/fitness-data/contents/data/fitness.json -H "Accept: application/vnd.github.raw" > logs/fitness-log-$(date +%F).json
+```
+
+如果失敗（例如未開同步），就叫用戶用手機「匯出俾 Claude」再放入 `logs/`。**唔好改 `fitness-data` 入面嘅資料**，嗰度只係俾手機寫。
+
 ## Claude 要做嘅嘢
 1. 讀 `logs/` 入面**最新**嗰個 JSON（如果有舊 log，同上一個比較趨勢）。次序：
    - `noteForClaude`：用戶想改咩（可能係空，空都要主動分析）

@@ -31,11 +31,120 @@ const PAIN = { none: '冇', knee: '膝頭', back: '腰背', shoulder: '膊頭', 
 // ---------- 資料 ----------
 function blank() {
   return { profile: { onboarded: false, nickname: '', heightCm: '', startDate: today(), gfMode: false, phaseOverride: 'auto' },
-           days: {}, workouts: [], activities: [], body: [], achieved: {}, active: null, reviewSeen: '', noteForClaude: '', weather: null };
+           days: {}, workouts: [], activities: [], body: [], achieved: {}, active: null, reviewSeen: '', noteForClaude: '', noteUpd: 0,
+           weather: null, deleted: {}, lastBackup: '' };
 }
 let S;
 try { S = Object.assign(blank(), JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { S = blank(); }
-function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('儲存失敗：手機空間可能唔夠'); } }
+function persist() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('儲存失敗：手機空間可能唔夠'); } }
+function save() { persist(); scheduleSync(); }
+
+// ---------- 合併（同步同匯入共用）：唔會覆蓋，以較新嗰份為準 ----------
+function mergeData(R) {
+  if (!R || typeof R !== 'object') return false;
+  const before = JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup]);
+  const dead = Object.assign({}, R.deleted || {}, S.deleted || {});
+  S.deleted = dead;
+  const stamp = x => x.upd || x.at || 0;
+  const byId = (a, b) => {
+    const m = new Map();
+    [...(a || []), ...(b || [])].forEach(x => { if (!x || !x.id) return; const o = m.get(x.id); if (!o || stamp(x) > stamp(o)) m.set(x.id, x); });
+    return [...m.values()].filter(x => !dead[x.id]);
+  };
+  S.workouts = byId(S.workouts, R.workouts);
+  S.activities = byId(S.activities, R.activities);
+  S.body = byId(S.body, R.body);
+  Object.entries(R.days || {}).forEach(([d, r]) => {
+    const l = S.days[d];
+    if (!l) { S.days[d] = r; return; }
+    const useR = r.checkin && (!l.checkin || (r.checkin.at || 0) > (l.checkin.at || 0));
+    const check = {};
+    new Set([...Object.keys(l.check || {}), ...Object.keys(r.check || {})]).forEach(k => { check[k] = !!((l.check || {})[k] || (r.check || {})[k]); });
+    const maxN = (a, b) => (a == null ? b : b == null ? a : Math.max(a, b));
+    S.days[d] = { check, waterMl: Math.max(l.waterMl || 0, r.waterMl || 0), protein: Math.max(l.protein || 0, r.protein || 0),
+      steps: maxN(l.steps, r.steps), sleepH: l.sleepH ?? r.sleepH ?? null,
+      checkin: useR ? r.checkin : l.checkin, rec: useR ? r.rec : (l.rec ?? r.rec) };
+  });
+  if (R.profile && ((!S.profile.onboarded && R.profile.onboarded) || (R.profile.upd || 0) > (S.profile.upd || 0))) S.profile = R.profile;
+  Object.entries(R.achieved || {}).forEach(([k, v]) => { if (!S.achieved[k] || v < S.achieved[k]) S.achieved[k] = v; });
+  if (R.adjustments && (R.adjustments.upd || 0) > ((S.adjust || {}).upd || 0)) S.adjust = R.adjustments;
+  const logs = new Map([...(S.adjustLog || []), ...(R.adjustLog || [])].map(x => [x.date + x.id, x]));
+  S.adjustLog = [...logs.values()].sort((a, b) => a.date.localeCompare(b.date));
+  S.insightSeen = Object.assign({}, R.dismissedInsights || {}, S.insightSeen || {});
+  Object.entries(R.dismissedInsights || {}).forEach(([k, v]) => { if (v > S.insightSeen[k]) S.insightSeen[k] = v; });
+  if ((R.noteUpd || 0) > (S.noteUpd || 0)) { S.noteForClaude = R.noteForClaude || ''; S.noteUpd = R.noteUpd; }
+  if ((R.reviewSeen || '') > (S.reviewSeen || '')) S.reviewSeen = R.reviewSeen;
+  if ((R.lastBackup || '') > (S.lastBackup || '')) S.lastBackup = R.lastBackup;
+  return before !== JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup]);
+}
+
+// ---------- GitHub 私人 repo 同步（token 只存喺呢部機，唔會匯出） ----------
+const SYNC_KEY = 'fc_sync', SYNC_PATH = 'data/fitness.json';
+let SY;
+try { SY = JSON.parse(localStorage.getItem(SYNC_KEY) || '{}'); } catch (e) { SY = {}; }
+const saveSY = () => { try { localStorage.setItem(SYNC_KEY, JSON.stringify(SY)); } catch (e) {} };
+const DEVICE = (() => { let d = null; try { d = localStorage.getItem('fc_device'); if (!d) { d = Math.random().toString(36).slice(2, 10); localStorage.setItem('fc_device', d); } } catch (e) {} return d || 'unknown'; })();
+let syncTimer = null, syncing = false, syncAgain = false;
+const syncReady = () => !!(SY.repo && SY.token);
+function scheduleSync() { if (!syncReady()) return; clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(false), 4000); }
+const b64enc = s => { const b = new TextEncoder().encode(s); let bin = ''; for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(bin); };
+const b64dec = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\s/g, '')), c => c.charCodeAt(0)));
+function ghFetch(opts = {}) {
+  return fetch(`https://api.github.com/repos/${SY.repo}/contents/${SYNC_PATH}`, Object.assign({ cache: 'no-store' }, opts, {
+    headers: Object.assign({ Authorization: `Bearer ${SY.token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }, opts.headers || {})
+  }));
+}
+async function pullRemote() {
+  const r = await ghFetch();
+  if (r.status === 404) return { data: null, sha: null };
+  if (r.status === 401 || r.status === 403) throw new Error('auth');
+  if (!r.ok) throw new Error('GitHub 回應 ' + r.status);
+  const j = await r.json();
+  let text = j.content ? b64dec(j.content) : await (await ghFetch({ headers: { Accept: 'application/vnd.github.raw' } })).text();
+  return { data: JSON.parse(text), sha: j.sha };
+}
+const coreOf = d => { const c = Object.assign({}, d); delete c.sync; delete c.exportedAt; return JSON.stringify(c); };
+async function syncNow(manual) {
+  if (!syncReady()) return;
+  if (!navigator.onLine) { if (manual) toast('而家離線，有網會自動同步'); return; }
+  if (syncing) { syncAgain = true; return; }
+  syncing = true; clearTimeout(syncTimer);
+  try {
+    let ok = false;
+    for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+      const remote = await pullRemote();
+      if (remote.data && mergeData(remote.data)) { persist(); render(); }
+      const local = exportData();
+      if (remote.data && coreOf(remote.data) === coreOf(local)) { ok = true; break; }
+      const payload = Object.assign(local, { sync: { device: DEVICE, name: SY.name || '', at: new Date().toISOString() } });
+      const body = { message: `sync ${today()} ${SY.name || DEVICE}`, content: b64enc(JSON.stringify(payload, null, 1)) };
+      if (remote.sha) body.sha = remote.sha;
+      const r = await ghFetch({ method: 'PUT', body: JSON.stringify(body) });
+      if (r.status === 409 || r.status === 422) continue; // 另一部機啱啱改咗：再拉一次再合併
+      if (r.status === 401 || r.status === 403) throw new Error('auth');
+      if (!r.ok) throw new Error('GitHub 回應 ' + r.status);
+      ok = true;
+    }
+    if (!ok) throw new Error('多部機同時同步，稍後再試');
+    SY.lastSync = Date.now(); SY.lastError = ''; saveSY();
+    if (manual) toast('☁️ 同步完成');
+  } catch (e) {
+    SY.lastError = e.message === 'auth' ? 'Token 無效、過期，或者冇呢個 repo 嘅權限' : (e.message === 'Failed to fetch' ? '連唔到 GitHub' : e.message);
+    saveSY();
+    if (manual) toast('同步失敗：' + SY.lastError);
+    else render();
+  } finally {
+    syncing = false;
+    const st = document.getElementById('syncStatus'); if (st) st.textContent = syncStatusText();
+    if (syncAgain) { syncAgain = false; scheduleSync(); }
+  }
+}
+function syncStatusText() {
+  if (!syncReady()) return '未連接：資料只存喺呢部機。';
+  if (SY.lastError) return '⚠️ ' + SY.lastError;
+  if (SY.lastSync) { const d = new Date(SY.lastSync); return `✅ 上次同步：${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+  return '已連接，未同步。';
+}
 function day(d = today()) {
   if (!S.days[d]) S.days[d] = { check: {}, waterMl: 0, steps: null, sleepH: null, protein: 0 };
   return S.days[d];
@@ -243,6 +352,7 @@ function applyInsight(id) {
   if (a.type === 'deload') A.deload[a.key] = today();
   if (a.type === 'shortDefault') A.shortDefault = today();
   if (a.type === 'shiftPref') A.shiftPref[a.shift] = 'cardio';
+  A.upd = Date.now();
   (S.adjustLog = S.adjustLog || []).push({ date: today(), id, title: it.title, action: a });
   save();
 }
@@ -348,7 +458,7 @@ async function loadWeather() {
     const h = now.humidity && now.humidity.data && now.humidity.data[0];
     const warnings = Object.keys(warn || {}).map(k => ({ code: k, name: warn[k].name }));
     S.weather = { at: Date.now(), temp: t ? t.value : null, place: t ? t.place : '', hum: h ? h.value : null, warnings };
-    save(); render();
+    persist(); render();
   } catch (e) { /* 冇網或者 API 失敗：照用冇天氣嘅建議 */ }
 }
 function weatherState() {
@@ -464,6 +574,7 @@ function vOnboard() {
     <label class="f">開始日期<input id="obStart" type="date" value="${today()}"></label>
     <label class="row f"><input type="checkbox" id="obGf"> 女朋友有時會一齊做運動</label>
     <button class="btn block" data-act="onboard">開始</button>
+    <p class="small muted" style="margin-top:10px">已經喺另一部機用緊？先撳右上角 ⚙︎ →「多裝置同步」連接，紀錄會自動搬過嚟。</p>
   </div>`;
 }
 
@@ -552,7 +663,10 @@ function vToday() {
   const wx = weatherState();
   const ins = insights().filter(i => i.level !== 'info').slice(0, 2);
   const insCard = ins.length ? `<div class="card"><div class="row between"><h2>🧠 教練觀察</h2><button class="btn sm ghost" data-tab="progress">睇全部</button></div>${ins.map(insightHtml).join('')}</div>` : '';
-  return `${review}${main}${insCard}
+  let safety = '';
+  if (syncReady() && SY.lastError) safety = `<div class="card"><b>☁️ 同步有問題</b><p class="small muted">${esc(SY.lastError)}。紀錄仍然安全存喺呢部機。</p><button class="btn sm ghost" data-act="openSettings">去設定</button></div>`;
+  else if (!syncReady() && (S.workouts.length || S.activities.length) && (!S.lastBackup || diffDays(S.lastBackup, today()) >= 7)) safety = `<div class="card"><b>💾 一個禮拜冇備份</b><p class="small muted">開咗同步就唔使理呢個；未開就撳一下匯出備份（存去 iCloud 雲碟或者 AirDrop 去 Mac）。</p><div class="row"><button class="btn sm" data-act="backupNow">一撳備份</button><button class="btn sm ghost" data-act="openSettings">設定同步</button></div></div>`;
+  return `${review}${safety}${main}${insCard}
   <div class="grid2" style="margin-bottom:12px">
     <button class="btn blue" data-act="dunno">🤷 唔知今日做咩</button>
     <button class="btn ghost" data-act="lowMode">🌙 好攰／夜更模式</button>
@@ -941,6 +1055,15 @@ function settingsModal() {
     <label class="row f"><input type="checkbox" id="sGf" ${p.gfMode ? 'checked' : ''}> 女朋友模式（建議一齊做嘅活動）</label>
     <label class="f">訓練階段<select id="sPhase"><option value="auto" ${p.phaseOverride === 'auto' ? 'selected' : ''}>自動（建議）</option><option value="1" ${p.phaseOverride === '1' ? 'selected' : ''}>固定第 1 階段</option><option value="2" ${p.phaseOverride === '2' ? 'selected' : ''}>固定第 2 階段</option></select></label>
     <button class="btn block" data-act="saveSettings">儲存設定</button>
+    <h3 style="margin-top:20px">☁️ 多裝置同步（GitHub 私人 repo）</h3>
+    <p class="small" id="syncStatus">${esc(syncStatusText())}</p>
+    <p class="small muted">每次記錄完都會自動上傳；喺另一部機打開會自動合併。Token 只存喺呢部機，唔會匯出，亦唔會上載。相片唔同步。</p>
+    <label class="f">Repo<input id="syRepo" value="${esc(SY.repo || 'benleung2004/fitness-data')}" autocapitalize="off" autocorrect="off"></label>
+    <label class="f">呢部機叫咩（方便睇紀錄）<input id="syName" value="${esc(SY.name || '')}" placeholder="例如 iPhone、Mac"></label>
+    <label class="f">GitHub Token<input id="syToken" type="password" autocomplete="off" autocapitalize="off" placeholder="${SY.token ? '已設定（想換先填）' : 'github_pat_…'}"></label>
+    <div class="grid2"><button class="btn" data-act="connectSync">${SY.token ? '儲存並同步' : '連接並同步'}</button><button class="btn ghost" data-act="syncNowBtn" ${syncReady() ? '' : 'disabled'}>立即同步</button></div>
+    ${SY.token ? '<div style="height:8px"></div><button class="btn sm danger" data-act="disconnectSync">喺呢部機中斷同步（唔會刪資料）</button>' : ''}
+    <p class="small muted">本機保護：${UI.persisted ? '✅ 已啟用永久儲存' : '瀏覽器未確認永久儲存（加入主畫面後會較穩陣）'}</p>
     <h3 style="margin-top:20px">🔧 目前嘅自動調整</h3>
     ${adjustList().length ? adjustList().map(a => `<div class="list-item"><span class="small">${esc(a.text)}</span><button class="btn sm ghost" data-act="resetAdjust" data-k="${esc(a.k)}">還原</button></div>`).join('') : '<p class="small muted">未有。教練觀察建議調整時，你撳「套用」就會出現喺度。</p>'}
     <h3 style="margin-top:20px">🤖 交俾 Claude 調整</h3>
@@ -960,7 +1083,7 @@ function settingsModal() {
 function exportData() {
   return {
     app: 'fitness-coach', exportedAt: new Date().toISOString(), configVersion: C.version,
-    noteForClaude: S.noteForClaude,
+    noteForClaude: S.noteForClaude, noteUpd: S.noteUpd || 0, deleted: S.deleted || {}, reviewSeen: S.reviewSeen || '', lastBackup: S.lastBackup || '',
     current: { phase: phase(), week: weekNo(), nextTemplate: nextTemplate(), weekStreak: weekStreak() },
     insights: insights().map(({ id, level, title, detail }) => ({ id, level, title, detail })),
     activityMix: activityMix(28),
@@ -1068,7 +1191,7 @@ const actions = {
   pick(el) { UI.draft[el.dataset.name] = el.dataset.name === 'time' ? Number(el.dataset.v) : el.dataset.v; render(); },
   submitCheckin() {
     if (!UI.draft.shift) { toast('先揀今日班次'); return; }
-    day().checkin = Object.assign({}, UI.draft); UI.draft = null; UI.editCheckin = false; save(); render(); window.scrollTo(0, 0);
+    day().checkin = Object.assign({}, UI.draft, { at: Date.now() }); UI.draft = null; UI.editCheckin = false; save(); render(); window.scrollTo(0, 0);
   },
   editCheckin() { UI.editCheckin = true; UI.draft = null; render(); },
   onboard() {
@@ -1078,7 +1201,8 @@ const actions = {
     S.profile.startDate = $('#obStart').value || today();
     S.profile.gfMode = $('#obGf').checked;
     S.profile.onboarded = true;
-    if (w) S.body.push({ id: uid(), date: today(), weight: w, waist: null });
+    S.profile.upd = Date.now();
+    if (w) S.body.push({ id: uid(), date: today(), weight: w, waist: null, upd: Date.now() });
     save(); render();
   },
   dunno() {
@@ -1125,8 +1249,25 @@ const actions = {
     if (type === 'deload') delete A.deload[k];
     if (type === 'shortDefault') A.shortDefault = false;
     if (type === 'shift') delete A.shiftPref[k];
+    A.upd = Date.now();
     save(); settingsModal(); render(); toast('已還原');
   },
+  connectSync() {
+    const repo = $('#syRepo').value.trim().replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '');
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) { toast('Repo 格式應該係「帳戶名/repo名」'); return; }
+    const tok = $('#syToken').value.trim();
+    if (!tok && !SY.token) { toast('請貼上 GitHub token'); return; }
+    SY.repo = repo; SY.name = $('#syName').value.trim(); if (tok) SY.token = tok;
+    SY.lastError = ''; saveSY();
+    $('#syToken').value = '';
+    syncNow(true).then(() => settingsModal());
+  },
+  syncNowBtn() { syncNow(true); },
+  disconnectSync() {
+    if (!confirm('喺呢部機中斷同步？資料會保留喺呢部機同 GitHub，之後可以再連接。')) return;
+    delete SY.token; SY.lastError = ''; saveSY(); settingsModal(); toast('已中斷');
+  },
+  backupNow() { S.lastBackup = today(); save(); exportClaude(); render(); },
   seenReview(el) { S.reviewSeen = el.dataset.w; save(); render(); },
   startGym(el) {
     closeModal();
@@ -1143,8 +1284,8 @@ const actions = {
   addSet(el) { const it = S.active.items[el.dataset.i]; const l = it.sets[it.sets.length - 1]; it.sets.push({ w: l ? l.w : '', r: '', rpe: '', done: false }); save(); render(); },
   finishGym,
   cancelGym() { if (confirm('確定放棄？今次記錄唔會儲存。')) { S.active = null; stopTimer(); save(); render(); } },
-  delWorkout(el) { if (confirm('刪除呢個訓練紀錄？')) { S.workouts = S.workouts.filter(w => w.id !== el.dataset.id); save(); render(); } },
-  delAct(el) { if (confirm('刪除呢個活動？')) { S.activities = S.activities.filter(a => a.id !== el.dataset.id); save(); render(); } },
+  delWorkout(el) { if (confirm('刪除呢個訓練紀錄？')) { S.deleted[el.dataset.id] = Date.now(); S.workouts = S.workouts.filter(w => w.id !== el.dataset.id); save(); render(); } },
+  delAct(el) { if (confirm('刪除呢個活動？')) { S.deleted[el.dataset.id] = Date.now(); S.activities = S.activities.filter(a => a.id !== el.dataset.id); save(); render(); } },
   logAct(el) { closeModal(); actModal({ kind: el.dataset.kind, min: el.dataset.min, km: el.dataset.km, commute: !!el.dataset.commute, int: el.dataset.int }); },
   saveAct() {
     const minutes = num($('#aMin').value);
@@ -1157,8 +1298,8 @@ const actions = {
     const w = num($('#bW').value), waist = num($('#bWaist').value);
     if (w == null && waist == null) { toast('填體重或者腰圍'); return; }
     const ex = S.body.find(b => b.date === today());
-    if (ex) { if (w != null) ex.weight = w; if (waist != null) ex.waist = waist; }
-    else S.body.push({ id: uid(), date: today(), weight: w, waist });
+    if (ex) { if (w != null) ex.weight = w; if (waist != null) ex.waist = waist; ex.upd = Date.now(); }
+    else S.body.push({ id: uid(), date: today(), weight: w, waist, upd: Date.now() });
     save(); render(); toast('已儲存');
   },
   async delPhoto(el) { if (confirm('刪除呢張相？')) { await photoTx('readwrite', st => st.delete(el.dataset.id)); fillPhotos(); } },
@@ -1167,13 +1308,13 @@ const actions = {
   saveSettings() {
     const p = S.profile;
     p.nickname = $('#sName').value.trim(); p.heightCm = num($('#sH').value) || '';
-    p.startDate = $('#sStart').value || p.startDate; p.gfMode = $('#sGf').checked; p.phaseOverride = $('#sPhase').value;
-    S.noteForClaude = $('#sNote').value.trim();
+    p.startDate = $('#sStart').value || p.startDate; p.gfMode = $('#sGf').checked; p.phaseOverride = $('#sPhase').value; p.upd = Date.now();
+    setNote($('#sNote').value);
     save(); closeModal(); render(); toast('已儲存設定');
   },
-  exportClaude() { S.noteForClaude = $('#sNote').value.trim(); save(); exportClaude(); },
+  exportClaude() { setNote($('#sNote').value); S.lastBackup = today(); save(); exportClaude(); },
   async copySummary() {
-    S.noteForClaude = $('#sNote').value.trim(); save();
+    setNote($('#sNote').value); save();
     try { await navigator.clipboard.writeText(summaryText()); toast('已複製，可以貼俾 Claude'); }
     catch (e) { modal(`<h2>摘要</h2><textarea style="min-height:50vh">${esc(summaryText())}</textarea><button class="btn block ghost" data-act="closeModal">關閉</button>`); }
   },
@@ -1218,9 +1359,9 @@ document.addEventListener('change', async e => {
     try {
       const d = JSON.parse(await t.files[0].text());
       if (d.app !== 'fitness-coach' || !Array.isArray(d.workouts)) throw new Error('格式唔啱');
-      if (!confirm(`匯入 ${d.exportedAt ? d.exportedAt.slice(0, 10) : ''} 嘅備份？會取代呢部機現有紀錄。`)) return;
-      S = Object.assign(blank(), { profile: d.profile, body: d.body || [], workouts: d.workouts, activities: d.activities || [], days: d.days || {}, achieved: d.achieved || {}, noteForClaude: d.noteForClaude || '', adjust: d.adjustments || null, adjustLog: d.adjustLog || [], insightSeen: d.dismissedInsights || {} });
-      save(); closeModal(); render(); toast('匯入完成');
+      if (!confirm(`將 ${d.exportedAt ? d.exportedAt.slice(0, 10) : ''} 嘅備份合併入呢部機？（唔會刪走現有紀錄，同一筆以較新為準）`)) return;
+      mergeData(d);
+      save(); closeModal(); render(); toast('合併完成');
     } catch (err) { toast('匯入失敗：' + err.message); }
   }
 });
@@ -1228,18 +1369,26 @@ document.addEventListener('change', async e => {
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.set) setField(t, true);
-  if (t.dataset.note != null && S.active) { S.active.items[t.dataset.note].note = t.value; save(); }
+  if (t.dataset.note != null && S.active) { S.active.items[t.dataset.note].note = t.value; persist(); }
 });
 function setField(t) {
   if (!S.active) return;
   const [i, j, f] = t.dataset.set.split(',');
-  S.active.items[i].sets[j][f] = t.value; save();
+  S.active.items[i].sets[j][f] = t.value; persist();
 }
+function setNote(v) { v = (v || '').trim(); if (v !== S.noteForClaude) { S.noteForClaude = v; S.noteUpd = Date.now(); } }
 
 // ---------- 啟動 ----------
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+// 叫瀏覽器將資料列為「永久儲存」，減少被自動清走嘅機會
+try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then(v => { UI.persisted = v; }); } catch (e) {}
 render();
 checkMilestones();
 loadWeather();
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { render(); loadWeather(); } });
+syncNow(false);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) { render(); loadWeather(); syncNow(false); }
+  else if (syncTimer) syncNow(false); // 收埋 App 之前，即刻上傳未同步嘅改動
+});
+window.addEventListener('online', () => syncNow(false));
 })();
