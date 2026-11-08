@@ -4,7 +4,7 @@
 // 改完記得將 sw.js 入面嘅 CACHE_VERSION 加 1，手機先會攞到新版。
 // =============================================================
 window.CONFIG = {
-  version: '1.2.0',
+  version: '1.3.0',
 
   // ---------- 每週 / 每日目標 ----------
   targets: {
@@ -151,11 +151,13 @@ window.CONFIG = {
   // ---------- 非 gym 方案 ----------
   homeCircuit: { name: '屋企 20 分鐘循環', minutes: 20,
     steps: ['徒手深蹲 × 12', '掌上壓 × 8–12（做唔到就跪地做）', '分腿蹲 每邊 × 8', '臀橋 × 15', '平板支撐 30 秒'],
+    keys: ['bwSquat', 'pushup', 'splitSquat', 'gluteBridge', 'plank'],   // 對應動作圖鑑
     note: '做 3 輪，每輪之間休息 60 秒。落雨、紅黃雨或者唔想去 gym 用。' },
 
   recovery: { name: '恢復模式（10–20 分鐘）', minutes: 15,
     steps: ['輕鬆行 10–15 分鐘（樓下或者屋苑）', '髖屈肌伸展 每邊 30 秒', '大腿後伸展 每邊 30 秒',
             '門框胸肌伸展 30 秒', '貓牛式 × 8', '嬰兒式 30–60 秒', '頸側伸展 每邊 20 秒'],
+    keys: [null, 'hipFlexor', 'hamstringStretch', 'chestStretch', 'catCow', 'childPose', 'neckStretch'],
     note: '夜更後、好攰或者瞓得差嗰日用。做完就去瞓，瞓覺比練得辛苦更重要。' },
 
   cardioOptions: [

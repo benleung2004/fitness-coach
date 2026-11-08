@@ -32,6 +32,7 @@ gh api repos/benleung2004/fitness-data/contents/data/fitness.json -H "Accept: ap
 - 目標、規則數字 → `js/config.js` 嘅 `targets`、`rules`
 - 動作、組數、次數、替代動作 → `js/config.js` 嘅 `exercises`、`workouts`
 - 班次提示、飲食建議、通勤建議 → `js/config.js`
+- 動作教學（中文步驟、常見錯誤、示範圖）→ `js/library.js`；新動作要加相就由 free-exercise-db 下載、縮到 480px 闊放入 `img/ex/<key>-0.jpg`／`-1.jpg`，再加入 `sw.js` 預先快取清單
 - 推薦邏輯 → `js/app.js` 嘅 `recommend()`
 - 加重邏輯 → `js/app.js` 嘅 `progression()`
 

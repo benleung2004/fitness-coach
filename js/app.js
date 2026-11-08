@@ -554,9 +554,10 @@ function render() {
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === UI.tab));
   $('#topTitle').textContent = S.profile.nickname ? `${S.profile.nickname} 嘅健身教練` : '健身教練';
   $('#topSub').textContent = `${fmtDate(today())} · 第 ${weekNo()} 週 · 第 ${phase()} 階段`;
-  const views = { today: vToday, train: vTrain, activity: vActivity, progress: vProgress, food: vFood };
+  const views = { today: vToday, train: vTrain, library: vLibrary, activity: vActivity, progress: vProgress, food: vFood };
   $('#app').innerHTML = views[UI.tab]();
   if (UI.tab === 'progress') fillPhotos();
+  if (UI.tab === 'library') filterLibrary();
 }
 
 const opts = (name, map, cur) => `<div class="opts">${Object.entries(map).map(([k, v]) =>
@@ -603,16 +604,16 @@ function vRec(rec) {
       const r = resolveEx(s.key, pain);
       if (!r.key) return `<li class="muted"><s>${esc(C.exercises[s.key].name)}</s>（今日略過）</li>`;
       const sets = rec.mode === 'return' ? Math.max(1, s.sets - 1) : s.sets;
-      return `<li>${esc(C.exercises[r.key].name)} <span class="muted">${sets} × ${s.reps[0]}–${s.reps[1]}</span>${r.from ? ' <span class="chip warn">替代</span>' : ''}</li>`;
+      return `<li>${exLink(r.key, esc(C.exercises[r.key].name))} <span class="muted">${sets} × ${s.reps[0]}–${s.reps[1]}</span>${r.from ? ' <span class="chip warn">替代</span>' : ''}</li>`;
     }).join('')}</ul>
     <button class="btn block" data-act="startGym" data-t="${rec.template}" data-mode="${rec.mode}">開始訓練</button>`;
   } else if (rec.kind === 'cardio') {
     body = `<button class="btn block" data-act="logAct" data-kind="${rec.cardioKind}" data-min="${rec.minutes}">做完，記錄 ${rec.minutes} 分鐘</button>`;
   } else if (rec.kind === 'recovery') {
-    body = `<ul class="clean">${C.recovery.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ul>
+    body = `<ul class="clean">${C.recovery.steps.map((s, i) => `<li>${exLink(C.recovery.keys[i], esc(s))}</li>`).join('')}</ul>
     <button class="btn block" data-act="logRecovery">完成恢復</button>`;
   } else if (rec.kind === 'home') {
-    body = `<ul class="clean">${C.homeCircuit.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ul><p class="small muted">${esc(C.homeCircuit.note)}</p>
+    body = `<ul class="clean">${C.homeCircuit.steps.map((s, i) => `<li>${exLink(C.homeCircuit.keys[i], esc(s))}</li>`).join('')}</ul><p class="small muted">${esc(C.homeCircuit.note)}</p>
     <button class="btn block" data-act="logHome">做完，記錄</button>`;
   } else if (rec.kind === 'cardio' || rec.kind === 'done') {
     body = '';
@@ -717,7 +718,7 @@ function vTrain() {
     const w = C.workouts[k];
     return `<div class="card">
       <div class="row between"><h2>${esc(w.name)}</h2>${k === next ? '<span class="chip ok">下一個</span>' : ''}</div>
-      <ul class="clean small">${w.exercises.map(s => `<li>${esc(C.exercises[s.key].name)} <span class="muted">${ph === 1 && w.phase === 2 ? 2 : s.sets} × ${s.reps[0]}–${s.reps[1]}${C.exercises[s.key].unit === 'sec' ? ' 秒' : ''}</span></li>`).join('')}</ul>
+      <ul class="clean small">${w.exercises.map(s => `<li>${exLink(s.key, esc(C.exercises[s.key].name))} <span class="muted">${ph === 1 && w.phase === 2 ? 2 : s.sets} × ${s.reps[0]}–${s.reps[1]}${C.exercises[s.key].unit === 'sec' ? ' 秒' : ''}</span></li>`).join('')}</ul>
       <button class="btn block ${k === next ? '' : 'ghost'}" data-act="startGym" data-t="${k}" data-mode="normal">開始 ${esc(w.name)}</button>
     </div>`;
   };
@@ -779,8 +780,9 @@ function vSession() {
     const unit = ex.unit === 'sec' ? '秒' : '下';
     const wPlaceholder = ex.unit === 'kg' ? 'kg' : '—';
     return `<div class="ex">
-      <div class="row between"><div class="ex-name">${esc(ex.name)}</div>${it.subFrom ? '<span class="chip warn">因痛替代</span>' : ''}</div>
-      <div class="small muted">${it.sets.length} 組 × ${it.reps[0]}–${it.reps[1]} ${unit} · 休息 ${esc(ex.rest)}</div>
+      <div class="row" style="align-items:flex-start;flex-wrap:nowrap"><button class="thumbbtn" data-act="exInfo" data-k="${it.key}" aria-label="睇示範">${animHtml(it.key, 'sm')}</button>
+        <div class="grow"><div class="ex-name">${exLink(it.key, esc(ex.name))}</div>${it.subFrom ? '<span class="chip warn">因痛替代</span>' : ''}
+      <div class="small muted">${it.sets.length} 組 × ${it.reps[0]}–${it.reps[1]} ${unit} · 休息 ${esc(ex.rest)}</div></div></div>
       ${C.workouts[a.type].exercises.find(s => s.key === it.slot && s.note) ? `<div class="small muted">${esc(C.workouts[a.type].exercises.find(s => s.key === it.slot).note)}</div>` : ''}
       <div class="sug">${esc(prog.text)}${warmupText(it.key, prog.w) ? '<br>' + esc(warmupText(it.key, prog.w)) : ''}</div>
       <details><summary>姿勢提示／冇器材點算</summary><p class="small">✅ ${esc(ex.cue)}</p><p class="small">🔁 替代：${esc(ex.sub)}</p>
@@ -1023,6 +1025,82 @@ async function fillPhotos() {
   } catch (e) { box.innerHTML = '<p class="muted small">呢個瀏覽器唔支援相片儲存。</p>'; }
 }
 
+// ---------- 動作圖鑑 ----------
+const L = window.LIBRARY || { groups: {}, items: {} };
+const SVG_POSES = {
+  birdDog: [
+    '<circle cx="52" cy="50" r="8"/><path d="M60 56 L120 58 M68 57 L68 104 M120 58 L120 104 L150 104"/>',
+    '<circle cx="52" cy="50" r="8"/><path d="M60 56 L120 58 M68 57 L22 50 M120 58 L178 54 M120 58 L120 104 L150 104"/><path d="M68 57 L68 104" opacity=".35"/>'
+  ],
+  chestStretch: [
+    '<rect x="44" y="6" width="8" height="104" fill="currentColor" stroke="none" opacity=".35"/><circle cx="100" cy="24" r="9"/><path d="M100 33 L100 72 L92 108 M100 72 L108 108 M100 40 L60 40 L60 16"/>',
+    '<rect x="44" y="6" width="8" height="104" fill="currentColor" stroke="none" opacity=".35"/><circle cx="116" cy="28" r="9"/><path d="M114 37 L104 72 L92 108 M104 72 L124 108 M112 44 L60 40 L60 16"/>'
+  ],
+  neckStretch: [
+    '<circle cx="100" cy="24" r="10"/><path d="M100 34 L100 76 L88 110 M100 76 L112 110 M100 42 L76 70 M100 42 L124 70"/>',
+    '<circle cx="113" cy="30" r="10"/><path d="M100 34 L100 76 L88 110 M100 76 L112 110 M100 42 L76 70 M100 42 L128 26 L118 22"/>'
+  ]
+};
+function animHtml(key, cls = '') {
+  const it = L.items[key];
+  if (!it) return '';
+  if (it.img === 'photo') return `<div class="anim ${cls}"><img src="img/ex/${key}-0.jpg" alt="${esc(it.zh)} 開始姿勢" loading="lazy"><img class="b" src="img/ex/${key}-1.jpg" alt="${esc(it.zh)} 完成姿勢" loading="lazy"></div>`;
+  const p = SVG_POSES[key];
+  if (!p) return '';
+  return `<div class="anim svg ${cls}"><svg viewBox="0 0 200 120" role="img" aria-label="${esc(it.zh)} 示範"><g class="a">${p[0]}</g><g class="b">${p[1]}</g><path d="M8 110 L192 110" opacity=".3"/></svg></div>`;
+}
+const exLink = (key, text) => L.items[key] ? `<button class="exlink" data-act="exInfo" data-k="${key}">${text} <span class="i">ⓘ</span></button>` : text;
+function usedIn(key) {
+  return Object.entries(C.workouts).filter(([, w]) => w.exercises.some(s => s.key === key)).map(([, w]) => {
+    const s = w.exercises.find(x => x.key === key); return `${w.name}（${s.sets} × ${s.reps[0]}–${s.reps[1]}）`; })
+    .concat(C.homeCircuit.keys.includes(key) ? [C.homeCircuit.name] : [], C.recovery.keys.includes(key) ? [C.recovery.name] : []);
+}
+function exModal(key) {
+  const it = L.items[key]; if (!it) return;
+  const ex = C.exercises[key];
+  const used = usedIn(key);
+  const yt = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(`${it.en} 教學`);
+  modal(`${animHtml(key, 'lg')}
+    <p class="small muted" style="margin:6px 0 0">${it.img === 'photo' ? '相片會自動喺「開始」同「完成」姿勢之間切換' : '簡單線條示範'}</p>
+    <h2 style="margin:10px 0 0">${esc(it.zh)}</h2>
+    <div class="muted">${esc(it.en)}</div>
+    <p class="small"><b>練邊度：</b>${esc(it.muscles)}</p>
+    ${it.find ? `<p class="small"><b>🔍 喺 gym 點認：</b>${esc(it.find)}</p>` : ''}
+    <h3>步驟</h3><ol class="clean">${it.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+    ${ex ? `<p class="small">✅ <b>重點：</b>${esc(ex.cue)}</p>` : ''}
+    <h3>常見錯誤</h3><ul class="clean small">${it.mistakes.map(x => `<li>❌ ${esc(x)}</li>`).join('')}</ul>
+    ${ex ? `<p class="small">🔁 <b>冇呢部機／做唔到：</b>${esc(ex.sub)}</p><p class="small muted">休息：${esc(ex.rest)}</p>` : ''}
+    ${used.length ? `<p class="small"><b>📅 喺你計劃入面：</b>${used.map(esc).join('、')}</p>` : ''}
+    <a class="btn block blue" href="${yt}" target="_blank" rel="noopener">▶️ YouTube 搵教學片</a>
+    <div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`);
+  const box = $('#modalBox'); if (box) box.scrollTop = 0;
+}
+function vLibrary() {
+  const g = UI.libGroup || 'all';
+  const plan = new Set(C.phases[phase()].rotation.flatMap(t => C.workouts[t].exercises.map(s => s.key)));
+  const entries = Object.entries(L.items).filter(([, it]) => g === 'all' || (g === 'plan' ? false : it.group === g) || (g === 'plan'));
+  const list = g === 'plan' ? entries.filter(([k]) => plan.has(k)) : entries;
+  return `<div class="card">
+    <h2>📖 動作圖鑑</h2>
+    <p class="small muted">撳任何動作睇示範、步驟同常見錯誤。喺 gym 唔識部機，就喺度搜尋英文名（例如 "Leg Press"）。</p>
+    <input id="libSearch" placeholder="搜尋：腿推、chest、伸展…" autocomplete="off" value="${esc(UI.libQ || '')}">
+    <div class="opts" style="margin-top:8px">
+      <button class="opt ${g === 'all' ? 'on' : ''}" data-act="libGroup" data-g="all">全部</button>
+      <button class="opt ${g === 'plan' ? 'on' : ''}" data-act="libGroup" data-g="plan">⭐ 而家計劃</button>
+      ${Object.entries(L.groups).map(([k, v]) => `<button class="opt ${g === k ? 'on' : ''}" data-act="libGroup" data-g="${k}">${v}</button>`).join('')}
+    </div>
+  </div>
+  <div id="libList">${list.map(([k, it]) => `<button class="libitem" data-act="exInfo" data-k="${k}" data-text="${esc((it.zh + ' ' + it.en + ' ' + it.muscles + ' ' + (L.groups[it.group] || '')).toLowerCase())}">
+      ${animHtml(k, 'sm')}
+      <span class="grow"><b>${esc(it.zh)}</b>${plan.has(k) ? ' <span class="chip ok">計劃</span>' : ''}<br><span class="small muted">${esc(it.en)}</span><br><span class="small muted">${esc(it.muscles)}</span></span>
+    </button>`).join('')}</div>
+  <p class="small muted" style="text-align:center">${esc(L.credit || '')}</p>`;
+}
+function filterLibrary() {
+  const q = (UI.libQ || '').trim().toLowerCase();
+  document.querySelectorAll('#libList .libitem').forEach(el => { el.classList.toggle('hidden', !!q && !el.dataset.text.includes(q)); });
+}
+
 // ---------- 飲食頁 ----------
 function vFood() {
   const x = day();
@@ -1217,7 +1295,7 @@ const actions = {
   },
   lowMode() {
     modal(`<h2>🌙 ${esc(C.recovery.name)}</h2><p class="small muted">${esc(C.recovery.note)}</p>
-      ${C.recovery.steps.map((s, i) => `<label class="row" style="padding:8px 0;border-top:1px solid var(--line)"><input type="checkbox"> ${esc(s)}</label>`).join('')}
+      ${C.recovery.steps.map((s, i) => `<div class="row" style="padding:8px 0;border-top:1px solid var(--line);flex-wrap:nowrap"><input type="checkbox" aria-label="完成"> <span class="grow">${exLink(C.recovery.keys[i], esc(s))}</span></div>`).join('')}
       <div class="grid2" style="margin-top:12px"><button class="btn ghost" data-act="closeModal">關閉</button><button class="btn" data-act="logRecovery">完成</button></div>`);
   },
   logRecovery() { closeModal(); addActivity({ date: today(), kind: 'recovery', minutes: 15, intensity: 'light', note: '恢復模式' }); toast('做得好，去休息啦 🌙'); },
@@ -1268,6 +1346,8 @@ const actions = {
     delete SY.token; SY.lastError = ''; saveSY(); settingsModal(); toast('已中斷');
   },
   backupNow() { S.lastBackup = today(); save(); exportClaude(); render(); },
+  exInfo(el) { exModal(el.dataset.k); },
+  libGroup(el) { UI.libGroup = el.dataset.g; render(); },
   seenReview(el) { S.reviewSeen = el.dataset.w; save(); render(); },
   startGym(el) {
     closeModal();
@@ -1369,6 +1449,7 @@ document.addEventListener('change', async e => {
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.set) setField(t, true);
+  if (t.id === 'libSearch') { UI.libQ = t.value; filterLibrary(); }
   if (t.dataset.note != null && S.active) { S.active.items[t.dataset.note].note = t.value; persist(); }
 });
 function setField(t) {

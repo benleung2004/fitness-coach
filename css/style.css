@@ -131,7 +131,7 @@ details summary { cursor: pointer; color: var(--blue); font-size: 14px; margin: 
 /* 底部導航 */
 .tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
-  display: grid; grid-template-columns: repeat(5, 1fr);
+  display: grid; grid-template-columns: repeat(6, 1fr);
   background: rgba(20,22,28,.97); border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -164,3 +164,23 @@ table.t th, table.t td { padding: 6px 4px; border-bottom: 1px solid var(--line);
 table.t th { color: var(--muted); font-weight: 600; }
 .ms { display: flex; gap: 8px; align-items: center; padding: 6px 0; }
 .ms.off { opacity: .45; }
+
+/* 動作示範：兩張相（開始／完成）自動交替 */
+.anim { position: relative; width: 100%; aspect-ratio: 3/2; overflow: hidden; border-radius: 12px; background: #fff; flex: none; }
+.anim img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.anim img.b, .anim g.b { animation: animB 2.4s infinite; }
+.anim g.a { animation: animA 2.4s infinite; }
+.anim.svg { background: var(--card2); color: var(--accent); }
+.anim.svg svg { width: 100%; height: 100%; fill: none; stroke: var(--accent); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+@keyframes animB { 0%, 42% { opacity: 0; } 50%, 92% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes animA { 0%, 42% { opacity: 1; } 50%, 92% { opacity: 0; } 100% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .anim img.b, .anim g.a, .anim g.b { animation-duration: 6s; } }
+.anim.sm { width: 96px; border-radius: 10px; }
+.anim.lg { border-radius: 14px; }
+.libitem { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; margin-bottom: 8px; color: var(--text); font-family: inherit; font-size: 15px; }
+.exlink { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; text-decoration: underline dotted var(--muted); text-underline-offset: 3px; }
+.exlink .i { color: var(--blue); font-size: 13px; text-decoration: none; }
+.thumbbtn { background: none; border: 0; padding: 0; margin-right: 10px; cursor: pointer; }
+ol.clean { margin: 6px 0; padding-left: 22px; } ol.clean li { margin: 4px 0; }
+.tab { font-size: 11px; }
+a.btn { text-decoration: none; }
