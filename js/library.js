@@ -8,7 +8,7 @@ window.LIBRARY = {
     legs: '🦵 腿同臀', back: '🔙 背', chest: '💪 胸', shoulders: '🙆 膊頭', arms: '💪 手臂',
     core: '🧱 核心', home: '🏠 屋企徒手', stretch: '🧘 伸展', cardio: '🚲 熱身／帶氧'
   },
-  credit: '示範相片來自 free-exercise-db（公共領域）。',
+  credit: '示範相片來自 free-exercise-db（公共領域）；鳥狗式相片來自 PTPioneer（Wikimedia Commons，CC BY 2.0）。',
   items: {
     // ---------- 腿同臀 ----------
     legPress: { zh: '腿推機', en: 'Leg Press', group: 'legs', img: 'photo', muscles: '大腿前（股四頭肌）、臀部、大腿後',
@@ -111,7 +111,7 @@ window.LIBRARY = {
     deadBug: { zh: '死蟲式', en: 'Dead Bug', group: 'core', img: 'photo', muscles: '腹部、核心',
       steps: ['瞓低，手指向天花板，膝頭屈 90 度舉起。', '下背貼實地面。', '對角嘅手同腳慢慢放低（例如右手 + 左腳）。', '返原位，換另一邊。'],
       mistakes: ['下背離開地面。', '做得太快。'] },
-    birdDog: { zh: '鳥狗式', en: 'Bird-dog', group: 'core', img: 'svg', muscles: '核心、下背、臀部',
+    birdDog: { zh: '鳥狗式', en: 'Bird-dog', group: 'core', img: 'photo', swap: true, credit: '相片：PTPioneer（Wikimedia Commons，CC BY 2.0），第二張為左右翻轉。', muscles: '核心、下背、臀部',
       steps: ['四點跪地：手喺膊頭下面，膝頭喺屁股下面。', '收肚，背保持平。', '同時伸直對角嘅手同腳（例如右手 + 左腳）。', '停 2 秒，返原位，換邊。'],
       mistakes: ['身體搖或者轉。', '腳舉太高令腰拱起。'] },
 
@@ -133,16 +133,17 @@ window.LIBRARY = {
     hamstringStretch: { zh: '大腿後伸展', en: 'Hamstring Stretch', group: 'stretch', img: 'photo', muscles: '大腿後',
       steps: ['坐低或者瞓低，伸直一隻腳。', '背保持直，慢慢向前傾（或者用毛巾拉起隻腳）。', '感覺大腿後拉緊就停，唔使去到痛。', '停 30 秒，換邊。'],
       mistakes: ['彎腰硬拉去掂腳趾。', '彈嚟彈去。'] },
-    chestStretch: { zh: '門框胸肌伸展', en: 'Doorway Chest Stretch', group: 'stretch', img: 'svg', muscles: '胸、膊頭前',
-      steps: ['企喺門口，手肘屈 90 度，前臂貼住門框。', '一隻腳向前踏半步。', '身體慢慢向前傾，感覺胸口拉開。', '停 30 秒，換手。'],
-      mistakes: ['手放太高令膊頭唔舒服。', '用力過度。'] },
+    chestStretch: { zh: '胸肌伸展（手肘向後）', en: 'Elbows Back Chest Stretch', group: 'stretch', img: 'photo', muscles: '胸、膊頭前（坐電腦寒背會好緊）',
+      steps: ['企直，雙手放喺後腰，手指向下。', '手肘慢慢向後夾埋，胸口向前挺。', '感覺胸口同膊頭前面拉開就停。', '停 20–30 秒，放鬆，再做多 1–2 次。'],
+      mistakes: ['拗腰挺肚（應該係挺胸）。', '聳膊。'],
+      note: '有門口嘅話，亦可以做門框伸展：前臂貼住門框，身體向前傾。' },
     catCow: { zh: '貓牛式', en: 'Cat-Cow', group: 'stretch', img: 'photo', muscles: '成條背脊',
       steps: ['四點跪地，背平。', '呼氣：拱起背脊（好似貓咁），低頭。', '吸氣：背脊慢慢向下沉，抬頭望前。', '慢慢來回 8 次。'],
       mistakes: ['做得太快。'] },
     childPose: { zh: '嬰兒式', en: "Child's Pose", group: 'stretch', img: 'photo', muscles: '下背、臀部、膊頭',
       steps: ['跪地，屁股坐向腳踭。', '身體向前伏低，雙手向前伸。', '額頭輕輕放地，放鬆呼吸。', '停 30–60 秒。'],
       mistakes: ['膝頭痛就唔好坐得太低。'] },
-    neckStretch: { zh: '頸側伸展', en: 'Neck Side Stretch', group: 'stretch', img: 'svg', muscles: '頸側、上斜方肌（坐電腦會好緊）',
+    neckStretch: { zh: '頸側伸展', en: 'Side Neck Stretch', group: 'stretch', img: 'photo', muscles: '頸側、上斜方肌（坐電腦會好緊）',
       steps: ['坐直或者企直，膊頭放鬆。', '頭慢慢側向一邊（耳仔向膊頭）。', '可以用同側手輕輕扶住頭，唔好用力拉。', '停 20 秒，換邊。'],
       mistakes: ['用力拉頸。', '聳起另一邊膊頭。'] },
 

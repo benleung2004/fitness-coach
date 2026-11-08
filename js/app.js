@@ -1061,10 +1061,11 @@ function exModal(key) {
   const used = usedIn(key);
   const yt = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(`${it.en} 教學`);
   modal(`${animHtml(key, 'lg')}
-    <p class="small muted" style="margin:6px 0 0">${it.img === 'photo' ? '相片會自動喺「開始」同「完成」姿勢之間切換' : '簡單線條示範'}</p>
+    <p class="small muted" style="margin:6px 0 0">${it.img !== 'photo' ? '簡單線條示範' : it.swap ? '相片會自動喺左右兩邊之間切換' : '相片會自動喺「開始」同「完成」姿勢之間切換'}</p>
     <h2 style="margin:10px 0 0">${esc(it.zh)}</h2>
     <div class="muted">${esc(it.en)}</div>
     <p class="small"><b>練邊度：</b>${esc(it.muscles)}</p>
+    ${it.note ? `<p class="small muted">💡 ${esc(it.note)}</p>` : ''}
     ${it.find ? `<p class="small"><b>🔍 喺 gym 點認：</b>${esc(it.find)}</p>` : ''}
     <h3>步驟</h3><ol class="clean">${it.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
     ${ex ? `<p class="small">✅ <b>重點：</b>${esc(ex.cue)}</p>` : ''}
@@ -1072,6 +1073,7 @@ function exModal(key) {
     ${ex ? `<p class="small">🔁 <b>冇呢部機／做唔到：</b>${esc(ex.sub)}</p><p class="small muted">休息：${esc(ex.rest)}</p>` : ''}
     ${used.length ? `<p class="small"><b>📅 喺你計劃入面：</b>${used.map(esc).join('、')}</p>` : ''}
     <a class="btn block blue" href="${yt}" target="_blank" rel="noopener">▶️ YouTube 搵教學片</a>
+    ${it.credit ? `<p class="small muted" style="margin-top:8px">${esc(it.credit)}</p>` : ''}
     <div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`);
   const box = $('#modalBox'); if (box) box.scrollTop = 0;
 }
