@@ -64,6 +64,8 @@ function mergeData(R) {
     S.days[d] = { check, waterMl: Math.max(l.waterMl || 0, r.waterMl || 0), protein: Math.max(l.protein || 0, r.protein || 0),
       steps: maxN(l.steps, r.steps), sleepH: l.sleepH ?? r.sleepH ?? null,
       checkin: useR ? r.checkin : l.checkin, rec: useR ? r.rec : (l.rec ?? r.rec) };
+    const restR = (r.restUpd || 0) > (l.restUpd || 0) ? r : l;
+    if (restR.restUpd) { S.days[d].restDay = !!restR.restDay; S.days[d].restUpd = restR.restUpd; }
   });
   if (R.profile && ((!S.profile.onboarded && R.profile.onboarded) || (R.profile.upd || 0) > (S.profile.upd || 0))) S.profile = R.profile;
   Object.entries(R.achieved || {}).forEach(([k, v]) => { if (!S.achieved[k] || v < S.achieved[k]) S.achieved[k] = v; });
@@ -160,6 +162,9 @@ let UI = { tab: 'today', editCheckin: false, strengthEx: 'legPress' };
 // ---------- 計算 ----------
 const gymWorkouts = () => S.workouts.filter(w => GYM_TYPES.includes(w.type)).sort((a, b) => a.date.localeCompare(b.date) || a.at - b.at);
 const lastGym = () => { const g = gymWorkouts(); return g[g.length - 1] || null; };
+// 未有 gym 會籍：屋企徒手肌力當做 gym 日計
+const noGym = () => !!S.profile.noGym;
+const strengthWorkouts = () => S.workouts.filter(w => GYM_TYPES.includes(w.type) || (noGym() && w.type === 'home')).sort((a, b) => a.date.localeCompare(b.date) || a.at - b.at);
 function phase() {
   if (S.profile.phaseOverride === '1') return 1;
   if (S.profile.phaseOverride === '2') return 2;
@@ -180,7 +185,7 @@ function cardioCredit(a) {
 }
 function hasLog(d) {
   const x = S.days[d];
-  const dayHas = x && (x.checkin || Object.values(x.check || {}).some(Boolean) || x.waterMl || x.steps || x.sleepH);
+  const dayHas = x && (x.checkin || x.restDay || Object.values(x.check || {}).some(Boolean) || x.waterMl || x.steps || x.sleepH);
   return !!(dayHas || S.workouts.some(w => w.date === d) || S.activities.some(a => a.date === d) || S.body.some(b => b.date === d));
 }
 function weekStats(ws) {
@@ -195,7 +200,7 @@ function weekStats(ws) {
   const weights = S.body.filter(b => inW(b.date) && b.weight != null).map(b => b.weight);
   return {
     weekStart: ws,
-    gym: S.workouts.filter(w => inW(w.date) && GYM_TYPES.includes(w.type)).length,
+    gym: S.workouts.filter(w => inW(w.date) && (GYM_TYPES.includes(w.type) || (noGym() && w.type === 'home'))).length,
     home: S.workouts.filter(w => inW(w.date) && w.type === 'home').length,
     cardio: sum(acts.map(cardioCredit)),
     light: sum(acts.filter(a => a.intensity === 'light').map(a => a.minutes)),
@@ -531,7 +536,7 @@ function gymScore(sh) {
 }
 // 未來 n 日計劃：每週排夠理想 gym 次數、唔連續兩日，其餘按班次排通勤／帶氧／恢復
 function planDays(start, n = 7, todayShift) {
-  const gyms = gymWorkouts();
+  const gyms = strengthWorkouts();
   const gymDates = new Set(gyms.map(w => w.date));
   const days = [];
   for (let i = 0; i < n; i++) { const d = addDays(start, i); days.push({ date: d, shift: (i === 0 && todayShift) || rosterShift(d), kind: null }); }
@@ -539,12 +544,13 @@ function planDays(start, n = 7, todayShift) {
   const near = d => [addDays(d, -1), d, addDays(d, 1)].some(x => gymDates.has(x) || picked.has(x));
   [...new Set(days.map(p => weekStart(p.date)))].forEach(wk => {
     let need = C.targets.gymIdeal - gyms.filter(w => weekStart(w.date) === wk).length;
-    days.filter(p => weekStart(p.date) === wk && gymScore(p.shift))
+    days.filter(p => weekStart(p.date) === wk && gymScore(p.shift) && !(S.days[p.date] || {}).restDay)
       .sort((a, b) => gymScore(a.shift) - gymScore(b.shift) || a.date.localeCompare(b.date))
       .forEach(p => { if (need > 0 && !near(p.date)) { picked.add(p.date); need--; } });
   });
   days.forEach(p => {
     if (gymDates.has(p.date)) p.kind = 'done';
+    else if ((S.days[p.date] || {}).restDay) p.kind = 'restday';
     else if (picked.has(p.date)) p.kind = 'gym';
     else if (!p.shift) p.kind = null;
     else if (p.shift === 'night') p.kind = 'recovery';
@@ -553,11 +559,16 @@ function planDays(start, n = 7, todayShift) {
   });
   return days;
 }
-const PLAN_ICON = { gym: '🏋️', commute: '🚶', cardio: '🚲', recovery: '🌙', done: '✅' };
+const PLAN_ICON = { gym: '🏋️', commute: '🚶', cardio: '🚲', recovery: '🌙', done: '✅', restday: '😌' };
 function planText(p) {
   const T = timesFor(p.shift, p.date) || {};
   const st = toMin(T.start), e = toMin(T.end);
-  if (p.kind === 'done') return '已經做咗 gym';
+  if (p.kind === 'restday') return '唔做運動，休息一日（行路、通勤照計）';
+  if (p.kind === 'done') return noGym() ? '已經做咗肌力訓練' : '已經做咗 gym';
+  if (p.kind === 'gym' && noGym()) {
+    const when = p.shift === 'rest' ? '任何時間' : p.shift === 'middle' && st != null && st >= 660 ? `返工前 ${fmtMin(st - 120)}` : `放工返到屋企 ${e != null ? fmtMin(e + 60) : ''}`;
+    return `屋企徒手肌力 3 輪（未有 gym 暫代）：${when}`;
+  }
   if (p.kind === 'gym') {
     if (p.shift === 'rest') return rosterShift(addDays(p.date, -1)) === 'night' ? 'Gym：夜更後先瞓夠，下晝 3 點後先去' : 'Gym：上晝 10–12 點（健身室人少）';
     if (p.shift === 'middle' && st != null && st >= 660) return `Gym：返工前 ${fmtMin(st - 150)} 開始（做大約 75 分鐘）`;
@@ -640,7 +651,8 @@ function recommend(ci) {
   const wx = weatherState();
   const ph = phase();
   const ws = weekStats(weekStart(t));
-  const lg = lastGym();
+  const sw = strengthWorkouts();
+  const lg = noGym() ? (sw[sw.length - 1] || null) : lastGym();
   const daysSinceGym = lg ? diffDays(lg.date, t) : null;
   const shiftTip = C.shifts[ci.shift] ? C.shifts[ci.shift].tip : '';
   const why = [];
@@ -651,12 +663,13 @@ function recommend(ci) {
 
   if (ci.shift === 'sick') return { kind: 'rest', icon: '🛌', title: '今日休息', summary: '病咗就休息、飲水、瞓覺。好返之後用「回歸訓練」慢慢返嚟。', why: ['身體恢復比 streak 重要'], extra, minimum: '今日嘅最低版本：飲夠水、早啲瞓。' };
   if (ci.shift === 'travel') return { kind: 'cardio', cardioKind: 'walk', minutes: 30, icon: '🧳', title: '旅行：行路就係運動', summary: '旅行行嘅路全部可以記做活動分鐘。返嚟之後照常繼續計劃，唔使內疚。', why: [shiftTip], extra, minimum };
+  if (S.days[t] && S.days[t].restDay && !doneToday) return { kind: 'restday', icon: '😌', title: '今日唔做運動（休息）', summary: '休息都係計劃嘅一部分。行路、通勤照樣記錄，照樣計入步數同帶氧。', why: ['你揀咗今日休息'], extra: [], minimum: '' };
   if (doneToday) return { kind: 'done', icon: '✅', title: '今日已經練咗！', summary: '做得好。今日剩低嘅可以輕鬆行 10–20 分鐘、飲夠水、早啲瞓。', why: [], extra, minimum: '' };
   if (ci.shift === 'night') return { kind: 'recovery', icon: '🌙', title: C.recovery.name, summary: '夜更前後唔做重訓。行 15–20 分鐘再伸展，之後優先瞓覺。', why: [shiftTip], extra, minimum: '最低版本：伸展 5 分鐘就去瞓。' };
   if (ci.energy === 'low' || ci.sleepQ === 'bad') return { kind: 'recovery', icon: '🔋', title: C.recovery.name, summary: '今日精神或者睡眠唔夠好，做輕鬆版就得，聽日再嚟過。', why: [ci.energy === 'low' ? '你話今日好攰' : '尋晚瞓得唔好'], extra, minimum: '最低版本：伸展 5 分鐘。' };
 
   const gymYesterday = lg && daysSinceGym === 1;
-  const isReturn = lg && daysSinceGym >= C.rules.returnAfterDays;
+  const isReturn = !noGym() && lg && daysSinceGym >= C.rules.returnAfterDays;
   const tmpl = nextTemplate();
   if (togetherText(t)) extra.push(togetherText(t));
   if (WORK_SHIFTS.includes(ci.shift) && ci.energy !== 'low') {
@@ -676,6 +689,8 @@ function recommend(ci) {
   };
   const A = adj();
   const gym = (reason, short) => {
+    if (noGym()) return { kind: 'home', icon: '🏠', title: C.homeCircuit.name + '（代替 gym）', summary: '未入 gym 之前，用徒手肌力保持習慣：' + C.homeCircuit.note,
+      why: why.concat(reason, '設定咗「未有 gym 會籍」'), extra: extra.concat('想郁多啲：做完再行 20 分鐘，或者揀踩單車／行山做帶氧。入咗 gym 會籍之後，去 ⚙︎ 設定熄咗「未有 gym」。'), minimum: '最低版本：做 1 輪。' };
     const shortByCoach = !short && !!A.shortDefault;
     short = short || shortByCoach;
     const mode = isReturn ? 'return' : (short ? 'short' : 'normal');
@@ -792,6 +807,8 @@ function vRec(rec) {
   } else if (rec.kind === 'home') {
     body = `<ul class="clean">${C.homeCircuit.steps.map((s, i) => `<li>${exLink(C.homeCircuit.keys[i], esc(s))}</li>`).join('')}</ul><p class="small muted">${esc(C.homeCircuit.note)}</p>
     <button class="btn block" data-act="logHome">做完，記錄</button>`;
+  } else if (rec.kind === 'restday') {
+    body = '<button class="btn sm ghost" data-act="toggleRestDay">取消（今日都做運動）</button>';
   } else if (rec.kind === 'cardio' || rec.kind === 'done') {
     body = '';
   }
@@ -831,7 +848,8 @@ function vToday() {
   }
   const ci = x.checkin;
   let main;
-  if (!ci || UI.editCheckin) main = vCheckin(ci);
+  if (x.restDay && !UI.editCheckin) main = vRec(recommend(ci || { shift: rosterShift(today()) || 'rest', energy: 'normal', sleepQ: 'ok', pain: 'none', time: 45, pref: 'any' }));
+  else if (!ci || UI.editCheckin) main = vCheckin(ci);
   else {
     const rec = recommend(ci);
     // 記低今日建議咗咩，之後用嚟分析「建議咗但做唔到」嘅情況
@@ -869,6 +887,7 @@ function vToday() {
       <button class="btn ghost" data-act="water2L">💧 飲咗 2L 水</button>
       <button class="btn ghost" data-act="slept7">😴 瞓咗 7 粒鐘</button>
       <button class="btn ghost" data-act="logAct" data-kind="walk" data-min="105" data-km="${C.rules.commuteKm}" data-commute="1">🏠 行返屋企</button>
+      <button class="btn ${x.restDay ? '' : 'ghost'}" data-act="toggleRestDay" style="grid-column:1/-1">${x.restDay ? '↩️ 取消：今日都做運動' : '😌 今日唔做運動（休息，行路照計）'}</button>
     </div>
   </div>
   <div class="card">
@@ -884,9 +903,12 @@ function vPlanCard() {
     <p class="small muted">入咗早／中／夜更嘅上落班時間同未來幾星期嘅班，App 會預早排好邊日去 gym、邊日行返屋企，每日問答亦會自動填班次。</p></div>`;
   const plan = planDays(today(), 7);
   return `<div class="card"><div class="row between"><h2>📅 未來 7 日</h2><button class="btn sm ghost" data-act="openRoster">改班表</button></div>
-    ${plan.map((p, i) => `<div class="list-item"><div><b>${i === 0 ? '今日' : shortDate(p.date)}（${WD[pd(p.date).getDay()]}）</b> <span class="chip">${p.shift ? esc(shiftLabel(p.shift, p.date)) : '未入班'}</span>
-      <div class="small ${p.kind === 'gym' ? '' : 'muted'}">${PLAN_ICON[p.kind] || '·'} ${esc(planText(p))}</div>${togetherText(p.date) ? `<div class="small" style="color:var(--blue)">${esc(togetherText(p.date))}</div>` : ''}</div></div>`).join('')}
-    <p class="small muted">實際做咩，仍然會跟你當日問答（精神、痛、時間）再調整。</p></div>`;
+    ${plan.map((p, i) => `<div class="list-item"><div class="grow"><b>${i === 0 ? '今日' : shortDate(p.date)}（${WD[pd(p.date).getDay()]}）</b> <span class="chip">${p.shift ? esc(shiftLabel(p.shift, p.date)) : '未入班'}</span>
+      <div class="small ${p.kind === 'gym' ? '' : 'muted'}">${p.kind === 'gym' && noGym() ? '🏠' : (PLAN_ICON[p.kind] || '·')} ${esc(planText(p))}</div>${togetherText(p.date) ? `<div class="small" style="color:var(--blue)">${esc(togetherText(p.date))}</div>` : ''}</div>
+      ${p.kind === 'done' ? '' : `<button class="btn sm ${p.kind === 'restday' ? '' : 'ghost'}" data-act="toggleRestDay" data-d="${p.date}" aria-label="唔做運動">😌</button>`}</div>`).join('')}
+    <p class="small muted">撳 😌 = 嗰日唔做運動，訓練日會自動搬去其他日子。實際做咩，仍然會跟你當日問答（精神、痛、時間）再調整。</p>
+    ${noGym() ? '<p class="small">🏠 未有 gym 會籍：gym 日暫時改做屋企徒手肌力。<button class="btn sm ghost" data-act="toggleNoGym">已經入咗 gym</button></p>'
+      : (gymWorkouts().length ? '' : '<p class="small muted">未入 gym？<button class="btn sm ghost" data-act="toggleNoGym">暫時用其他運動代替</button></p>')}</div>`;
 }
 function rosterModal() {
   const gf = UI.rosterWho === 'gf';
@@ -1403,6 +1425,7 @@ function settingsModal() {
     <div class="grid2"><label class="f">身高 cm<input id="sH" type="number" value="${esc(p.heightCm)}"></label>
     <label class="f">開始日期<input id="sStart" type="date" value="${esc(p.startDate)}"></label></div>
     <label class="row f"><input type="checkbox" id="sGf" ${p.gfMode ? 'checked' : ''}> 女朋友模式（建議一齊做嘅活動）</label>
+    <label class="row f"><input type="checkbox" id="sNoGym" ${p.noGym ? 'checked' : ''}> 未有 gym 會籍（gym 日暫時改做屋企徒手肌力同帶氧）</label>
     <label class="f">屋企位置（通勤地圖終點，只存喺你嘅私人資料）<input id="sHome" value="${esc(p.home || '')}" placeholder="${esc(C.commute.homeDefault)}"></label>
     <button class="btn block ghost" data-act="openRoster" style="margin-bottom:8px">📅 班表同上落班時間</button>
     <label class="f">訓練階段<select id="sPhase"><option value="auto" ${p.phaseOverride === 'auto' ? 'selected' : ''}>自動（建議）</option><option value="1" ${p.phaseOverride === '1' ? 'selected' : ''}>固定第 1 階段</option><option value="2" ${p.phaseOverride === '2' ? 'selected' : ''}>固定第 2 階段</option></select></label>
@@ -1671,6 +1694,12 @@ const actions = {
   },
   async delPhoto(el) { if (confirm('刪除呢張相？')) { await photoTx('readwrite', st => st.delete(el.dataset.id)); fillPhotos(); } },
   openSettings() { settingsModal(); },
+  toggleRestDay(el) {
+    const d = el.dataset.d || today(), x = day(d);
+    x.restDay = !x.restDay; x.restUpd = Date.now();
+    save(); render(); toast(x.restDay ? `${d === today() ? '今日' : shortDate(d)}唔做運動 😌 行路照計` : '已取消');
+  },
+  toggleNoGym() { S.profile.noGym = !S.profile.noGym; S.profile.upd = Date.now(); save(); render(); toast(S.profile.noGym ? '已改：gym 日暫時做屋企徒手肌力' : '已改返：gym 日去 gym 💪'); },
   openRoster() { UI.rosterWho = 'me'; rosterModal(); },
   rosterWho(el) { UI.rosterWho = el.dataset.w; rosterModal(); },
   setRoster(el) {
@@ -1699,7 +1728,7 @@ const actions = {
   saveSettings() {
     const p = S.profile;
     p.nickname = $('#sName').value.trim(); p.heightCm = num($('#sH').value) || '';
-    p.startDate = $('#sStart').value || p.startDate; p.gfMode = $('#sGf').checked; p.phaseOverride = $('#sPhase').value; p.home = $('#sHome').value.trim(); p.upd = Date.now();
+    p.startDate = $('#sStart').value || p.startDate; p.gfMode = $('#sGf').checked; p.phaseOverride = $('#sPhase').value; p.home = $('#sHome').value.trim(); p.noGym = $('#sNoGym').checked; p.upd = Date.now();
     setNote($('#sNote').value);
     save(); closeModal(); render(); toast('已儲存設定');
   },

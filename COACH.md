@@ -18,6 +18,7 @@ gh api repos/benleung2004/fitness-data/contents/data/fitness.json -H "Accept: ap
    - `activityMix`、`exerciseCompletion`：近 28 日做得多／做得少、每個動作完成率
    - `adjustments`、`adjustLog`：用戶喺手機已經套用咗嘅自動調整（例如移除咗某個動作）→ 如果應該變成永久改動，就改 `config.js`，並提醒用戶喺手機「設定 → 目前嘅自動調整」還原
    - `weeklySummaries`、`workouts`、`activities`、`days[*].checkin`、`days[*].rec`（當日建議咗咩）
+   - `profile.noGym`（未有 gym 會籍：gym 日改做屋企徒手肌力，`home` 訓練當 gym 計）、`days[*].restDay`（用戶揀咗嗰日唔做運動，唔當做「冇去」）
    - `roster`（每日班次）、`shiftTimesEffective`（上落班時間）、`gfRoster`（女朋友班次，可選）、`plan7`（App 按班表排嘅未來 7 日，`together` = 兩個都得閒嘅時段）：比較「排咗 gym」同實際 `workouts`，睇邊種班次經常做唔到
 2. 用繁體中文（香港口語）寫一份簡短報告：
    - 過去 2–4 週嘅 gym 次數、帶氧分鐘、步數、睡眠、飲水同體重趨勢
