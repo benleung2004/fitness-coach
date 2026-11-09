@@ -4,7 +4,7 @@
 // 改完記得將 sw.js 入面嘅 CACHE_VERSION 加 1，手機先會攞到新版。
 // =============================================================
 window.CONFIG = {
-  version: '1.4.0',
+  version: '1.4.1',
 
   // ---------- 每週 / 每日目標 ----------
   targets: {
@@ -170,7 +170,8 @@ window.CONFIG = {
   // ---------- 班次提示 ----------
   shifts: {
     early:  { name: '早更', tip: '放工後去 gym 最好；或者聽朝做帶氧。' },
-    middle: { name: '中更', tip: '返工前去 gym（避開放工人多時段），或者放工後行 30 分鐘。' },
+    office: { name: '辦公時間', tip: '放工 6–9 點健身室人多：可以行／踩返屋企做帶氧，gym 留俾早更或者休息日。' },
+    middle: { name: '晚更', tip: '返工前去 gym（避開放工人多時段），或者放工後行 30 分鐘。' },
     night:  { name: '夜更', tip: '夜更後唔做重訓。行 15–20 分鐘 + 伸展，然後優先瞓覺。' },
     rest:   { name: '休息日', tip: '最適合做完整 gym；平日早上或者下午康文署健身室人較少。' },
     travel: { name: '旅行', tip: '旅行行路都計活動分鐘，返嚟照常繼續，唔使內疚。' },
@@ -179,9 +180,28 @@ window.CONFIG = {
 
   // 班表：預設上落班時間（用戶喺「📅 班表」改成真實時間，存喺 S.shiftTimes）
   shiftDefaults: {
-    early:  { start: '07:00', end: '15:00' },
-    middle: { start: '15:00', end: '23:00' },
-    night:  { start: '23:00', end: '07:00' }
+    early:  { start: '08:00', end: '16:00' },
+    office: { start: '08:45', end: '17:30', endFri: '17:45' }, // 星期五遲 15 分鐘放工
+    middle: { start: '16:00', end: '23:00' },
+    night:  { start: '23:00', end: '08:00' }
+  },
+
+  // 女朋友班表（可選，只用嚟搵一齊做運動嘅時間）
+  gfShifts: {
+    A:   { name: 'A',   start: '07:00', end: '16:00' },
+    P:   { name: 'P',   start: '13:00', end: '22:00' },
+    SA:  { name: 'SA',  start: '07:00', end: '13:30' },
+    N:   { name: 'N',   start: '21:00', end: '07:00' },
+    Day: { name: 'Day', start: '09:00', end: '18:00' },
+    off: { name: '休',  start: null,    end: null }
+  },
+  together: {
+    window: ['07:00', '22:00'],  // 可以做運動嘅時段
+    commuteBuffer: 45,           // 上班前後預留（分鐘）
+    sleepAfterNight: 360,        // 通宵更後瞓覺（分鐘）
+    preNight: 120,               // 通宵更前休息（分鐘）
+    minMinutes: 90,
+    ideas: { long: '一齊行大埔滘自然護理區，或者沿吐露港單車徑踩去大美督', short: '一齊沿大埔海濱公園快行，或者一齊去 gym' }
   },
 
   painAdvice: {

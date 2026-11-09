@@ -32,7 +32,7 @@ const PAIN = { none: '冇', knee: '膝頭', back: '腰背', shoulder: '膊頭', 
 function blank() {
   return { profile: { onboarded: false, nickname: '', heightCm: '', startDate: today(), gfMode: false, phaseOverride: 'auto' },
            days: {}, workouts: [], activities: [], body: [], achieved: {}, active: null, reviewSeen: '', noteForClaude: '', noteUpd: 0,
-           weather: null, deleted: {}, lastBackup: '', roster: {}, shiftTimes: null };
+           weather: null, deleted: {}, lastBackup: '', roster: {}, gfRoster: {}, shiftTimes: null };
 }
 let S;
 try { S = Object.assign(blank(), JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { S = blank(); }
@@ -42,7 +42,7 @@ function save() { persist(); scheduleSync(); }
 // ---------- 合併（同步同匯入共用）：唔會覆蓋，以較新嗰份為準 ----------
 function mergeData(R) {
   if (!R || typeof R !== 'object') return false;
-  const before = JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.shiftTimes]);
+  const before = JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.gfRoster, S.shiftTimes]);
   const dead = Object.assign({}, R.deleted || {}, S.deleted || {});
   S.deleted = dead;
   const stamp = x => x.upd || x.at || 0;
@@ -75,10 +75,12 @@ function mergeData(R) {
   if ((R.noteUpd || 0) > (S.noteUpd || 0)) { S.noteForClaude = R.noteForClaude || ''; S.noteUpd = R.noteUpd; }
   if ((R.reviewSeen || '') > (S.reviewSeen || '')) S.reviewSeen = R.reviewSeen;
   if ((R.lastBackup || '') > (S.lastBackup || '')) S.lastBackup = R.lastBackup;
-  S.roster = S.roster || {};
-  Object.entries(R.roster || {}).forEach(([d, r]) => { const l = S.roster[d]; if (r && (!l || (r.upd || 0) > (l.upd || 0))) S.roster[d] = r; });
+  ['roster', 'gfRoster'].forEach(key => {
+    S[key] = S[key] || {};
+    Object.entries(R[key] || {}).forEach(([d, r]) => { const l = S[key][d]; if (r && (!l || (r.upd || 0) > (l.upd || 0))) S[key][d] = r; });
+  });
   if (R.shiftTimes && R.shiftTimes.t && (R.shiftTimes.upd || 0) > ((S.shiftTimes || {}).upd || 0)) S.shiftTimes = { t: R.shiftTimes.t, upd: R.shiftTimes.upd };
-  return before !== JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.shiftTimes]);
+  return before !== JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.gfRoster, S.shiftTimes]);
 }
 
 // ---------- GitHub 私人 repo 同步（token 只存喺呢部機，唔會匯出） ----------
@@ -495,7 +497,8 @@ async function loadSun() {
 }
 
 // ---------- 班表 ----------
-const ROSTER_SHIFTS = { early: '早', middle: '中', night: '夜', rest: '休' };
+const ROSTER_SHIFTS = { early: '早', office: '辦', middle: '晚', night: '夜', rest: '休' };
+const WORK_SHIFTS = ['early', 'office', 'middle'];
 const toMin = t => { if (!t || !/^\d\d:\d\d$/.test(t)) return null; const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 const fmtMin = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; };
 function shiftTimes() {
@@ -506,16 +509,23 @@ function shiftTimes() {
 }
 const rosterShift = d => (S.roster && S.roster[d] && S.roster[d].s) || null;
 const hasRoster = () => Object.entries(S.roster || {}).some(([d, r]) => r && r.s && d >= today());
-function shiftLabel(sh) {
+// 辦公時間星期五遲啲放工
+function timesFor(sh, d) {
   const T = shiftTimes()[sh];
+  if (!T) return null;
+  return { start: T.start, end: (T.endFri && d && pd(d).getDay() === 5) ? T.endFri : T.end };
+}
+function shiftLabel(sh, d) {
+  const T = timesFor(sh, d);
   return (C.shifts[sh] ? C.shifts[sh].name : sh) + (T ? ` ${T.start}–${T.end}` : '');
 }
 // 放工時間夠早（20:00 前）先建議成程行／踩返屋企
-const commuteFeasible = sh => { const T = shiftTimes()[sh]; const e = T && toMin(T.end); return ['early', 'middle'].includes(sh) && e != null && e <= 1200 && e >= 360; };
+const commuteFeasible = (sh, d) => { const T = timesFor(sh, d); const e = T && toMin(T.end); return WORK_SHIFTS.includes(sh) && e != null && e <= 1200 && e >= 360; };
 function gymScore(sh) {
   if (!sh || adj().shiftPref[sh] === 'cardio') return 0;
   if (sh === 'rest') return 1;
   if (sh === 'early') return 2;
+  if (sh === 'office') return 2.5;
   if (sh === 'middle') { const T = shiftTimes().middle; const st = toMin(T.start), e = toMin(T.end); return (st != null && st >= 660) || (e != null && e <= 1200) ? 3 : 0; }
   return 0;
 }
@@ -538,18 +548,18 @@ function planDays(start, n = 7, todayShift) {
     else if (picked.has(p.date)) p.kind = 'gym';
     else if (!p.shift) p.kind = null;
     else if (p.shift === 'night') p.kind = 'recovery';
-    else if (commuteFeasible(p.shift)) p.kind = 'commute';
+    else if (commuteFeasible(p.shift, p.date)) p.kind = 'commute';
     else p.kind = 'cardio';
   });
   return days;
 }
 const PLAN_ICON = { gym: '🏋️', commute: '🚶', cardio: '🚲', recovery: '🌙', done: '✅' };
 function planText(p) {
-  const T = shiftTimes()[p.shift] || {};
+  const T = timesFor(p.shift, p.date) || {};
   const st = toMin(T.start), e = toMin(T.end);
   if (p.kind === 'done') return '已經做咗 gym';
   if (p.kind === 'gym') {
-    if (p.shift === 'rest') return 'Gym：上晝 10–12 點（健身室人少）';
+    if (p.shift === 'rest') return rosterShift(addDays(p.date, -1)) === 'night' ? 'Gym：夜更後先瞓夠，下晝 3 點後先去' : 'Gym：上晝 10–12 點（健身室人少）';
     if (p.shift === 'middle' && st != null && st >= 660) return `Gym：返工前 ${fmtMin(st - 150)} 開始（做大約 75 分鐘）`;
     return `Gym：放工後 ${e != null ? fmtMin(e + 45) : ''} 左右`;
   }
@@ -567,13 +577,13 @@ function commuteAdvice(d, sh) {
   sh = sh || rosterShift(d) || ((S.days[d] || {}).checkin || {}).shift;
   if (!sh) return { ok: false, shift: null, lines: ['未知今日班次：答咗今日問答或者入咗班表，就會幫你判斷。'] };
   if (sh === 'night') return { ok: false, shift: sh, lines: ['夜更：今日唔建議行／跑返屋企，瞓覺優先。'] };
-  if (!['early', 'middle'].includes(sh)) return { ok: false, shift: sh, lines: ['今日唔使返工。想練通勤路線，可以揀涼爽時間試行一段。'] };
-  const e = toMin(shiftTimes()[sh].end);
+  if (!WORK_SHIFTS.includes(sh)) return { ok: false, shift: sh, lines: ['今日唔使返工。想練通勤路線，可以揀涼爽時間試行一段。'] };
+  const e = toMin(timesFor(sh, d).end);
   const wx = weatherState();
   const lines = [];
   let ok = true;
   if (wx.outdoorBad) { ok = false; lines.push('天氣唔適合（太熱或者有警告），今日搭車返，改做室內'); }
-  if (!commuteFeasible(sh)) { ok = false; lines.push(`${fmtMin(e)} 先收工太夜，唔建議成程行返；可以落車後行一段 20 分鐘`); }
+  if (!commuteFeasible(sh, d)) { ok = false; lines.push(`${fmtMin(e)} 先收工太夜，唔建議成程行返；可以落車後行一段 20 分鐘`); }
   else {
     const sun = sunset(d), walk = e + C.commute.minutes.walk;
     lines.push(walk > toMin(sun) + 20
@@ -583,6 +593,44 @@ function commuteAdvice(d, sh) {
   }
   if (wx.known) lines.push('天氣：' + wx.text);
   return { ok, shift: sh, lines };
+}
+// ---------- 同女朋友一齊郁：搵兩個人都得閒嘅時段 ----------
+const gfShift = d => (S.gfRoster && S.gfRoster[d] && S.gfRoster[d].s) || null;
+// 一日入面有咩時間唔得閒（分鐘區間），包括返工前後交通、通宵更前休息同之後瞓覺
+function busyIntervals(cur, prev) {
+  const G = C.together, out = [];
+  const add = (t, isPrev) => {
+    if (!t || !t.start || !t.end) return;
+    const a = toMin(t.start), b = toMin(t.end), overnight = b <= a;
+    if (isPrev) { if (overnight) out.push([0, b + G.sleepAfterNight]); return; }
+    if (overnight) out.push([a - G.preNight, 1440]);
+    else out.push([a - G.commuteBuffer, b + G.commuteBuffer]);
+  };
+  add(prev, true); add(cur, false);
+  return out;
+}
+function freeIntervals(busy) {
+  const [w0, w1] = C.together.window.map(toMin);
+  let free = [[w0, w1]];
+  busy.forEach(([a, b]) => { free = free.flatMap(([x, y]) => (b <= x || a >= y) ? [[x, y]] : [[x, a], [b, y]].filter(([p, q]) => q - p > 0)); });
+  return free;
+}
+function togetherWindow(d) {
+  const mine = rosterShift(d), hers = gfShift(d);
+  if (!S.profile.gfMode || !mine || !hers) return null;
+  const myT = sh => (sh && sh !== 'rest' ? timesFor(sh, d) : null);
+  const myPrev = rosterShift(addDays(d, -1));
+  const herT = sh => { const g = C.gfShifts[sh]; return g && g.start ? g : null; };
+  const a = freeIntervals(busyIntervals(myT(mine), myPrev && myPrev !== 'rest' ? timesFor(myPrev, addDays(d, -1)) : null));
+  const b = freeIntervals(busyIntervals(herT(hers), herT(gfShift(addDays(d, -1)))));
+  let best = null;
+  a.forEach(([x, y]) => b.forEach(([p, q]) => { const s0 = Math.max(x, p), e0 = Math.min(y, q); if (e0 - s0 >= C.together.minMinutes && (!best || e0 - s0 > best[1] - best[0])) best = [s0, e0]; }));
+  return best;
+}
+function togetherText(d) {
+  const w = togetherWindow(d);
+  if (!w) return '';
+  return `👫 同女朋友都得閒 ${fmtMin(w[0])}–${fmtMin(w[1])}：${w[1] - w[0] >= 150 ? C.together.ideas.long : C.together.ideas.short}`;
 }
 const mapUrl = mode => `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(C.commute.origin)}&destination=${encodeURIComponent(S.profile.home || C.commute.homeDefault)}&travelmode=${mode}`;
 
@@ -610,7 +658,8 @@ function recommend(ci) {
   const gymYesterday = lg && daysSinceGym === 1;
   const isReturn = lg && daysSinceGym >= C.rules.returnAfterDays;
   const tmpl = nextTemplate();
-  if (['early', 'middle'].includes(ci.shift) && ci.energy !== 'low') {
+  if (togetherText(t)) extra.push(togetherText(t));
+  if (WORK_SHIFTS.includes(ci.shift) && ci.energy !== 'low') {
     const cm = commuteAdvice(t, ci.shift);
     if (cm.ok) extra.push(`放工可以行／踩單車返屋企（${C.rules.commuteKm} km）：${cm.lines[0]}。記得喺「活動」記錄。`);
   }
@@ -835,29 +884,41 @@ function vPlanCard() {
     <p class="small muted">入咗早／中／夜更嘅上落班時間同未來幾星期嘅班，App 會預早排好邊日去 gym、邊日行返屋企，每日問答亦會自動填班次。</p></div>`;
   const plan = planDays(today(), 7);
   return `<div class="card"><div class="row between"><h2>📅 未來 7 日</h2><button class="btn sm ghost" data-act="openRoster">改班表</button></div>
-    ${plan.map((p, i) => `<div class="list-item"><div><b>${i === 0 ? '今日' : shortDate(p.date)}（${WD[pd(p.date).getDay()]}）</b> <span class="chip">${p.shift ? esc(shiftLabel(p.shift)) : '未入班'}</span>
-      <div class="small ${p.kind === 'gym' ? '' : 'muted'}">${PLAN_ICON[p.kind] || '·'} ${esc(planText(p))}</div></div></div>`).join('')}
+    ${plan.map((p, i) => `<div class="list-item"><div><b>${i === 0 ? '今日' : shortDate(p.date)}（${WD[pd(p.date).getDay()]}）</b> <span class="chip">${p.shift ? esc(shiftLabel(p.shift, p.date)) : '未入班'}</span>
+      <div class="small ${p.kind === 'gym' ? '' : 'muted'}">${PLAN_ICON[p.kind] || '·'} ${esc(planText(p))}</div>${togetherText(p.date) ? `<div class="small" style="color:var(--blue)">${esc(togetherText(p.date))}</div>` : ''}</div></div>`).join('')}
     <p class="small muted">實際做咩，仍然會跟你當日問答（精神、痛、時間）再調整。</p></div>`;
 }
 function rosterModal() {
+  const gf = UI.rosterWho === 'gf';
   const T = shiftTimes();
   const t0 = today(), start = weekStart(t0);
+  const opts = gf ? Object.fromEntries(Object.entries(C.gfShifts).map(([k, v]) => [k, v.name])) : ROSTER_SHIFTS;
+  const get = gf ? gfShift : rosterShift;
   let rows = '';
   for (let i = 0; i < 35; i++) {
     const d = addDays(start, i);
     if (d < t0) continue;
     if (pd(d).getDay() === 1 || d === t0) rows += `<div class="small muted" style="margin:10px 0 2px">${shortDate(weekStart(d))} 嗰週</div>`;
-    const cur = rosterShift(d);
-    rows += `<div class="rrow"><span class="rd">${shortDate(d)} ${WD[pd(d).getDay()]}</span><div class="seg">${Object.entries(ROSTER_SHIFTS).map(([k, v]) =>
-      `<button class="seg-b ${cur === k ? 'on' : ''}" data-act="setRoster" data-d="${d}" data-s="${k}">${v}</button>`).join('')}</div></div>`;
+    const cur = get(d), mine = rosterShift(d);
+    rows += `<div class="rrow"><span class="rd">${shortDate(d)} ${WD[pd(d).getDay()]}${gf && mine ? `<span class="small muted" style="display:block">我：${ROSTER_SHIFTS[mine] || ''}</span>` : ''}</span><div class="seg" style="grid-template-columns:repeat(${Object.keys(opts).length},1fr)">${Object.entries(opts).map(([k, v]) =>
+      `<button class="seg-b ${cur === k ? 'on' : ''}" data-act="setRoster" data-who="${gf ? 'gf' : 'me'}" data-d="${d}" data-s="${k}">${esc(v)}</button>`).join('')}</div></div>`;
   }
-  modal(`<h2>📅 班表</h2>
-    <h3>每更上落班時間</h3>
-    ${['early', 'middle', 'night'].map(k => `<div class="ttrow"><span>${C.shifts[k].name}</span><input type="time" id="t-${k}-s" value="${esc(T[k].start)}"><span>–</span><input type="time" id="t-${k}-e" value="${esc(T[k].end)}"></div>`).join('')}
+  const tRow = (k, label) => `<div class="ttrow"><span>${label}</span><input type="time" id="t-${k}-s" value="${esc(T[k].start)}"><span>–</span><input type="time" id="t-${k}-e" value="${esc(T[k].end)}"></div>`;
+  const head = gf
+    ? `<p class="small muted">可選：只係用嚟搵你哋兩個都得閒、可以一齊做運動嘅時間。${S.profile.gfMode ? '' : '<b>要喺 ⚙︎ 設定開「女朋友模式」先會顯示。</b>'}</p>
+       <p class="small muted">${Object.values(C.gfShifts).filter(v => v.start).map(v => `${v.name} ${v.start}–${v.end}`).join(' · ')}</p>`
+    : `<h3>每更上落班時間</h3>
+    ${tRow('early', '早更')}
+    ${tRow('office', '辦公')}
+    <div class="ttrow"><span></span><span class="small muted" style="text-align:right">星期五</span><span></span><input type="time" id="t-office-f" value="${esc(T.office.endFri || T.office.end)}"></div>
+    ${tRow('middle', '晚更')}
+    ${tRow('night', '夜更')}
     <button class="btn sm" data-act="saveShiftTimes" style="margin-top:6px">儲存時間</button>
     <h3 style="margin-top:18px">未來 5 星期（撳一下揀，再撳一下清除）</h3>
-    <p class="small muted">早＝早更、中＝中更、夜＝夜更、休＝休息日。即撳即存，會同步去其他裝置。</p>
-    ${rows}
+    <p class="small muted">早＝早更、辦＝辦公時間、晚＝晚更、夜＝夜更、休＝休息日。即撳即存，會同步去其他裝置。</p>`;
+  modal(`<h2>📅 班表</h2>
+    <div class="seg" style="grid-template-columns:1fr 1fr;margin-bottom:8px"><button class="seg-b ${gf ? '' : 'on'}" data-act="rosterWho" data-w="me">我</button><button class="seg-b ${gf ? 'on' : ''}" data-act="rosterWho" data-w="gf">👫 女朋友（可選）</button></div>
+    ${head}${rows}
     <div style="height:12px"></div><button class="btn block ghost" data-act="closeModal">完成</button>`);
 }
 function progressLine(label, v, target, unit) {
@@ -1359,7 +1420,7 @@ function settingsModal() {
     ${adjustList().length ? adjustList().map(a => `<div class="list-item"><span class="small">${esc(a.text)}</span><button class="btn sm ghost" data-act="resetAdjust" data-k="${esc(a.k)}">還原</button></div>`).join('') : '<p class="small muted">未有。教練觀察建議調整時，你撳「套用」就會出現喺度。</p>'}
     <h3 style="margin-top:20px">🤖 交俾 Claude 調整</h3>
     <p class="small muted">匯出你所有紀錄（唔包括相片），連埋 App 自動分析出嚟嘅「教練觀察」、做得多／做得少、動作完成率。AirDrop 或者傳去 Mac 嘅 <code>Desktop/fitness-coach/logs/</code>，再喺 Claude Code 講「睇最新 log 幫我調整」。Claude 會睇晒全部紀錄，就算你乜都唔寫都會分析。</p>
-    <label class="f">想 Claude 特別幫你改咩？（可以唔填）<textarea id="sNote" placeholder="例如：中更好難去 gym，想改返工前 30 分鐘版本">${esc(S.noteForClaude)}</textarea></label>
+    <label class="f">想 Claude 特別幫你改咩？（可以唔填）<textarea id="sNote" placeholder="例如：晚更好難去 gym，想改返工前 30 分鐘版本">${esc(S.noteForClaude)}</textarea></label>
     <button class="btn block blue" data-act="exportClaude">📤 匯出俾 Claude（JSON）</button>
     <div style="height:8px"></div>
     <button class="btn block ghost" data-act="copySummary">📋 複製文字摘要（可以直接貼俾 Claude）</button>
@@ -1381,7 +1442,7 @@ function exportData() {
     exerciseCompletion: exerciseCompletion().map(({ key, name, planned, done }) => ({ key, name, planned, done })),
     adjustments: adj(), adjustLog: S.adjustLog || [], dismissedInsights: S.insightSeen || {},
     weeklySummaries: weeklySummaries(12),
-    roster: S.roster || {}, shiftTimes: S.shiftTimes || null, shiftTimesEffective: shiftTimes(), plan7: planDays(today(), 7).map(p => ({ date: p.date, shift: p.shift, kind: p.kind, text: planText(p) })),
+    roster: S.roster || {}, gfRoster: S.gfRoster || {}, shiftTimes: S.shiftTimes || null, shiftTimesEffective: shiftTimes(), plan7: planDays(today(), 7).map(p => ({ date: p.date, shift: p.shift, gfShift: gfShift(p.date), kind: p.kind, text: planText(p), together: togetherText(p.date) })),
     profile: S.profile, body: S.body, workouts: S.workouts, activities: S.activities, days: S.days, achieved: S.achieved
   };
 }
@@ -1405,7 +1466,7 @@ function summaryText() {
   if (ins.length) { lines.push('## App 自動觀察'); ins.forEach(i => lines.push(`- [${i.level}] ${i.title}：${i.detail}`)); lines.push(''); }
   const mix = activityMix(28);
   lines.push('## 近 28 日做得多／少', ...mix.list.map(m => `- ${m.label}: ${m.times} 次 / ${m.minutes} 分鐘`), mix.missing.length ? `- 未做過：${mix.missing.join('、')}` : '', '');
-  if (hasRoster()) lines.push('## 未來 7 日班表計劃', ...planDays(today(), 7).map(p => `- ${p.date} ${p.shift ? shiftLabel(p.shift) : '未入班'}：${planText(p)}`), '');
+  if (hasRoster()) lines.push('## 未來 7 日班表計劃', ...planDays(today(), 7).map(p => `- ${p.date} ${p.shift ? shiftLabel(p.shift, p.date) : '未入班'}：${planText(p)}${togetherText(p.date) ? '；' + togetherText(p.date) : ''}`), '');
   const al = adjustList();
   if (al.length) lines.push('## 已套用嘅自動調整', ...al.map(a => '- ' + a.text), '');
   lines.push('## 每週', '| 週一 | gym | 帶氧分 | 步數 | 瞓 | 水L | 體重 | 完成度 |', '|---|---|---|---|---|---|---|---|');
@@ -1610,21 +1671,27 @@ const actions = {
   },
   async delPhoto(el) { if (confirm('刪除呢張相？')) { await photoTx('readwrite', st => st.delete(el.dataset.id)); fillPhotos(); } },
   openSettings() { settingsModal(); },
-  openRoster() { rosterModal(); },
+  openRoster() { UI.rosterWho = 'me'; rosterModal(); },
+  rosterWho(el) { UI.rosterWho = el.dataset.w; rosterModal(); },
   setRoster(el) {
-    const d = el.dataset.d, v = rosterShift(d) === el.dataset.s ? '' : el.dataset.s;
-    S.roster = S.roster || {};
-    S.roster[d] = { s: v, upd: Date.now() };
+    const key = el.dataset.who === 'gf' ? 'gfRoster' : 'roster';
+    const d = el.dataset.d, v = (key === 'gfRoster' ? gfShift(d) : rosterShift(d)) === el.dataset.s ? '' : el.dataset.s;
+    S[key] = S[key] || {};
+    S[key][d] = { s: v, upd: Date.now() };
     el.parentNode.querySelectorAll('.seg-b').forEach(b => b.classList.toggle('on', b.dataset.s === v));
     save(); render();
   },
   saveShiftTimes() {
     const t = {};
-    for (const k of ['early', 'middle', 'night']) {
+    const ok = v => toMin(v) != null;
+    for (const k of ['early', 'office', 'middle', 'night']) {
       const a = $(`#t-${k}-s`).value, b = $(`#t-${k}-e`).value;
-      if (!toMin(a) && a !== '00:00' || !toMin(b) && b !== '00:00') { toast(`請填好${C.shifts[k].name}時間`); return; }
+      if (!ok(a) || !ok(b)) { toast(`請填好${C.shifts[k].name}時間`); return; }
       t[k] = { start: a, end: b };
     }
+    const f = $('#t-office-f').value;
+    if (!ok(f)) { toast('請填好星期五放工時間'); return; }
+    t.office.endFri = f;
     S.shiftTimes = { t, upd: Date.now() };
     save(); render(); toast('已儲存上落班時間');
   },
