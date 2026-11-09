@@ -184,3 +184,15 @@ table.t th { color: var(--muted); font-weight: 600; }
 ol.clean { margin: 6px 0; padding-left: 22px; } ol.clean li { margin: 4px 0; }
 .tab { font-size: 11px; }
 a.btn { text-decoration: none; }
+.gname { font-size: 20px; font-weight: 800; margin: 10px 0 2px; }
+.gset { font-size: 18px; font-weight: 700; margin: 14px 0 6px; }
+.btn.xl { min-height: 64px; font-size: 19px; }
+.btn:disabled { opacity: .4; }
+.grid3 input, .grid3 select { padding: 10px 6px; text-align: center; }
+.ttrow { display: grid; grid-template-columns: 44px 1fr 12px 1fr; gap: 6px; align-items: center; margin: 6px 0; }
+.ttrow input { margin: 0; padding: 8px; }
+.rrow { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.rrow .rd { width: 64px; font-size: 14px; flex: none; }
+.seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; flex: 1; }
+.seg-b { min-height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--card2); color: var(--text); font-size: 15px; font-family: inherit; }
+.seg-b.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }

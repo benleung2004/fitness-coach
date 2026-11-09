@@ -32,7 +32,7 @@ const PAIN = { none: '冇', knee: '膝頭', back: '腰背', shoulder: '膊頭', 
 function blank() {
   return { profile: { onboarded: false, nickname: '', heightCm: '', startDate: today(), gfMode: false, phaseOverride: 'auto' },
            days: {}, workouts: [], activities: [], body: [], achieved: {}, active: null, reviewSeen: '', noteForClaude: '', noteUpd: 0,
-           weather: null, deleted: {}, lastBackup: '' };
+           weather: null, deleted: {}, lastBackup: '', roster: {}, shiftTimes: null };
 }
 let S;
 try { S = Object.assign(blank(), JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { S = blank(); }
@@ -42,7 +42,7 @@ function save() { persist(); scheduleSync(); }
 // ---------- 合併（同步同匯入共用）：唔會覆蓋，以較新嗰份為準 ----------
 function mergeData(R) {
   if (!R || typeof R !== 'object') return false;
-  const before = JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup]);
+  const before = JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.shiftTimes]);
   const dead = Object.assign({}, R.deleted || {}, S.deleted || {});
   S.deleted = dead;
   const stamp = x => x.upd || x.at || 0;
@@ -75,7 +75,10 @@ function mergeData(R) {
   if ((R.noteUpd || 0) > (S.noteUpd || 0)) { S.noteForClaude = R.noteForClaude || ''; S.noteUpd = R.noteUpd; }
   if ((R.reviewSeen || '') > (S.reviewSeen || '')) S.reviewSeen = R.reviewSeen;
   if ((R.lastBackup || '') > (S.lastBackup || '')) S.lastBackup = R.lastBackup;
-  return before !== JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup]);
+  S.roster = S.roster || {};
+  Object.entries(R.roster || {}).forEach(([d, r]) => { const l = S.roster[d]; if (r && (!l || (r.upd || 0) > (l.upd || 0))) S.roster[d] = r; });
+  if (R.shiftTimes && R.shiftTimes.t && (R.shiftTimes.upd || 0) > ((S.shiftTimes || {}).upd || 0)) S.shiftTimes = { t: R.shiftTimes.t, upd: R.shiftTimes.upd };
+  return before !== JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.shiftTimes]);
 }
 
 // ---------- GitHub 私人 repo 同步（token 只存喺呢部機，唔會匯出） ----------
@@ -471,6 +474,118 @@ function weatherState() {
            text: `${w.place} ${w.temp ?? '–'}°C · 濕度 ${w.hum ?? '–'}%${w.warnings.length ? ' · ⚠️ ' + w.warnings.map(x => x.name).join('、') : ''}` };
 }
 
+// ---------- 日落（香港天文台開放數據，冇網就用每月約數） ----------
+const SUN_APPROX = ['18:05', '18:25', '18:35', '18:45', '18:58', '19:08', '19:10', '18:55', '18:30', '18:05', '17:45', '17:42'];
+let SUN = {};
+try { SUN = JSON.parse(localStorage.getItem('fc_sun') || '{}'); } catch (e) { SUN = {}; }
+const sunset = d => SUN[d] || SUN_APPROX[pd(d).getMonth()];
+async function loadSun() {
+  const d = today();
+  if (SUN[d] && SUN[addDays(d, 6)]) return;
+  try {
+    for (const m of new Set([d, addDays(d, 6)].map(x => x.slice(0, 7)))) {
+      const [y, mo] = m.split('-');
+      const r = await fetch(`https://data.weather.gov.hk/weatherAPI/opendata/opendata.php?dataType=SRS&lang=en&rformat=json&year=${y}&month=${Number(mo)}`).then(x => x.json());
+      (r.data || []).forEach(row => { if (/^\d\d:\d\d$/.test(row[3] || '')) SUN[row[0]] = row[3]; });
+    }
+    Object.keys(SUN).forEach(k => { if (k < addDays(d, -3)) delete SUN[k]; });
+    try { localStorage.setItem('fc_sun', JSON.stringify(SUN)); } catch (e) {}
+    render();
+  } catch (e) { /* 用約數 */ }
+}
+
+// ---------- 班表 ----------
+const ROSTER_SHIFTS = { early: '早', middle: '中', night: '夜', rest: '休' };
+const toMin = t => { if (!t || !/^\d\d:\d\d$/.test(t)) return null; const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const fmtMin = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; };
+function shiftTimes() {
+  const t = (S.shiftTimes && S.shiftTimes.t) || {};
+  const out = {};
+  Object.keys(C.shiftDefaults).forEach(k => { out[k] = Object.assign({}, C.shiftDefaults[k], t[k] || {}); });
+  return out;
+}
+const rosterShift = d => (S.roster && S.roster[d] && S.roster[d].s) || null;
+const hasRoster = () => Object.entries(S.roster || {}).some(([d, r]) => r && r.s && d >= today());
+function shiftLabel(sh) {
+  const T = shiftTimes()[sh];
+  return (C.shifts[sh] ? C.shifts[sh].name : sh) + (T ? ` ${T.start}–${T.end}` : '');
+}
+// 放工時間夠早（20:00 前）先建議成程行／踩返屋企
+const commuteFeasible = sh => { const T = shiftTimes()[sh]; const e = T && toMin(T.end); return ['early', 'middle'].includes(sh) && e != null && e <= 1200 && e >= 360; };
+function gymScore(sh) {
+  if (!sh || adj().shiftPref[sh] === 'cardio') return 0;
+  if (sh === 'rest') return 1;
+  if (sh === 'early') return 2;
+  if (sh === 'middle') { const T = shiftTimes().middle; const st = toMin(T.start), e = toMin(T.end); return (st != null && st >= 660) || (e != null && e <= 1200) ? 3 : 0; }
+  return 0;
+}
+// 未來 n 日計劃：每週排夠理想 gym 次數、唔連續兩日，其餘按班次排通勤／帶氧／恢復
+function planDays(start, n = 7, todayShift) {
+  const gyms = gymWorkouts();
+  const gymDates = new Set(gyms.map(w => w.date));
+  const days = [];
+  for (let i = 0; i < n; i++) { const d = addDays(start, i); days.push({ date: d, shift: (i === 0 && todayShift) || rosterShift(d), kind: null }); }
+  const picked = new Set();
+  const near = d => [addDays(d, -1), d, addDays(d, 1)].some(x => gymDates.has(x) || picked.has(x));
+  [...new Set(days.map(p => weekStart(p.date)))].forEach(wk => {
+    let need = C.targets.gymIdeal - gyms.filter(w => weekStart(w.date) === wk).length;
+    days.filter(p => weekStart(p.date) === wk && gymScore(p.shift))
+      .sort((a, b) => gymScore(a.shift) - gymScore(b.shift) || a.date.localeCompare(b.date))
+      .forEach(p => { if (need > 0 && !near(p.date)) { picked.add(p.date); need--; } });
+  });
+  days.forEach(p => {
+    if (gymDates.has(p.date)) p.kind = 'done';
+    else if (picked.has(p.date)) p.kind = 'gym';
+    else if (!p.shift) p.kind = null;
+    else if (p.shift === 'night') p.kind = 'recovery';
+    else if (commuteFeasible(p.shift)) p.kind = 'commute';
+    else p.kind = 'cardio';
+  });
+  return days;
+}
+const PLAN_ICON = { gym: '🏋️', commute: '🚶', cardio: '🚲', recovery: '🌙', done: '✅' };
+function planText(p) {
+  const T = shiftTimes()[p.shift] || {};
+  const st = toMin(T.start), e = toMin(T.end);
+  if (p.kind === 'done') return '已經做咗 gym';
+  if (p.kind === 'gym') {
+    if (p.shift === 'rest') return 'Gym：上晝 10–12 點（健身室人少）';
+    if (p.shift === 'middle' && st != null && st >= 660) return `Gym：返工前 ${fmtMin(st - 150)} 開始（做大約 75 分鐘）`;
+    return `Gym：放工後 ${e != null ? fmtMin(e + 45) : ''} 左右`;
+  }
+  if (p.kind === 'commute') {
+    const arrive = e + C.commute.minutes.walk;
+    const dark = arrive > toMin(sunset(p.date)) + 20;
+    return `${fmtMin(e)} 放工行／踩返屋企${dark ? `（日落 ${sunset(p.date)}，後半程會黑，帶燈）` : '（天黑前到）'}`;
+  }
+  if (p.kind === 'cardio') return p.shift === 'rest' ? '快行／踩單車 30–45 分鐘' : '返工前快行／踩單車 30 分鐘（收工太夜唔行返屋企）';
+  if (p.kind === 'recovery') return '夜更：瞓醒行 15 分鐘 + 伸展，瞓覺優先';
+  return '未入班表';
+}
+// 今日通勤判斷：放工時間 + 日落 + 天氣
+function commuteAdvice(d, sh) {
+  sh = sh || rosterShift(d) || ((S.days[d] || {}).checkin || {}).shift;
+  if (!sh) return { ok: false, shift: null, lines: ['未知今日班次：答咗今日問答或者入咗班表，就會幫你判斷。'] };
+  if (sh === 'night') return { ok: false, shift: sh, lines: ['夜更：今日唔建議行／跑返屋企，瞓覺優先。'] };
+  if (!['early', 'middle'].includes(sh)) return { ok: false, shift: sh, lines: ['今日唔使返工。想練通勤路線，可以揀涼爽時間試行一段。'] };
+  const e = toMin(shiftTimes()[sh].end);
+  const wx = weatherState();
+  const lines = [];
+  let ok = true;
+  if (wx.outdoorBad) { ok = false; lines.push('天氣唔適合（太熱或者有警告），今日搭車返，改做室內'); }
+  if (!commuteFeasible(sh)) { ok = false; lines.push(`${fmtMin(e)} 先收工太夜，唔建議成程行返；可以落車後行一段 20 分鐘`); }
+  else {
+    const sun = sunset(d), walk = e + C.commute.minutes.walk;
+    lines.push(walk > toMin(sun) + 20
+      ? `${fmtMin(e)} 放工行返屋企大約 ${fmtMin(walk)} 到，日落 ${sun}：後半程會黑，著光色衫、帶燈，行行人路／單車徑`
+      : `${fmtMin(e)} 放工行返屋企大約 ${fmtMin(walk)} 到，天黑前（日落 ${sun}）到屋企 ✅`);
+    if (wx.runBad) lines.push('今日熱／濕，唔好跑，行或者踩單車');
+  }
+  if (wx.known) lines.push('天氣：' + wx.text);
+  return { ok, shift: sh, lines };
+}
+const mapUrl = mode => `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(C.commute.origin)}&destination=${encodeURIComponent(S.profile.home || C.commute.homeDefault)}&travelmode=${mode}`;
+
 // ---------- 推薦引擎 ----------
 function recommend(ci) {
   const t = today();
@@ -495,8 +610,10 @@ function recommend(ci) {
   const gymYesterday = lg && daysSinceGym === 1;
   const isReturn = lg && daysSinceGym >= C.rules.returnAfterDays;
   const tmpl = nextTemplate();
-  const commuteOk = ['early', 'middle'].includes(ci.shift) && !wx.outdoorBad && ci.energy !== 'low';
-  if (commuteOk) extra.push(`放工可以考慮行／踩單車返屋企（中大 → 大埔 ${C.rules.commuteKm} km），記得喺「活動」記錄，會計入帶氧。`);
+  if (['early', 'middle'].includes(ci.shift) && ci.energy !== 'low') {
+    const cm = commuteAdvice(t, ci.shift);
+    if (cm.ok) extra.push(`放工可以行／踩單車返屋企（${C.rules.commuteKm} km）：${cm.lines[0]}。記得喺「活動」記錄。`);
+  }
   if (wx.known) why.push('天氣：' + wx.text);
 
   const cardio = (kind, mins, reason) => {
@@ -540,6 +657,16 @@ function recommend(ci) {
   }
   // 「你幫我揀」
   if (A.shiftPref[ci.shift] === 'cardio') return cardio('walk', Math.min(ci.time, 45), `教練調整：${C.shifts[ci.shift].name}日你通常去唔到 gym，改做帶氧`);
+  if (hasRoster() && C.shifts[ci.shift] && ROSTER_SHIFTS[ci.shift]) {
+    const plan = planDays(t, 7, ci.shift);
+    if (plan[0].kind === 'gym' && ci.time >= 30 && ws.gym < C.targets.gymIdeal) return gym('班表計劃：今日係 gym 日', ci.time < 45);
+    if (plan[0].kind !== 'gym') {
+      const later = plan.slice(1).filter(p => p.kind === 'gym' && weekStart(p.date) === weekStart(t));
+      if (later.length && ws.gym + later.length >= C.targets.gymMin) {
+        return cardio('walk', Math.min(ci.time, 45), `班表計劃：本週 gym 排咗喺 ${later.map(p => shortDate(p.date)).join('、')}，今日做帶氧`);
+      }
+    }
+  }
   if (ws.gym < C.targets.gymIdeal && ci.time >= 30) {
     const reason = ws.gym < C.targets.gymMin ? `本週做咗 ${ws.gym}/${C.targets.gymMin} 次 gym` : `本週已達最低目標，第 ${ws.gym + 1} 次係加分`;
     if (ws.gym >= C.targets.gymMin && ws.cardio < C.targets.cardioMinutes) return cardio('walk', Math.min(ci.time, 45), `gym 已達標（${ws.gym} 次），帶氧仲差 ${C.targets.cardioMinutes - ws.cardio} 分鐘`);
@@ -581,10 +708,11 @@ function vOnboard() {
 
 function vCheckin(ci) {
   ci = ci || {};
-  const d = UI.draft || (UI.draft = Object.assign({ shift: '', energy: 'normal', sleepQ: 'ok', pain: 'none', time: 45, pref: 'any' }, ci));
+  const rs = rosterShift(today());
+  const d = UI.draft || (UI.draft = Object.assign({ shift: rs || '', energy: 'normal', sleepQ: 'ok', pain: 'none', time: 45, pref: 'any' }, ci));
   return `<div class="card">
     <h2>今日 30 秒問答</h2>
-    <div class="q"><div class="q-label">1. 今日班次</div>${opts('shift', Object.fromEntries(Object.entries(C.shifts).map(([k, v]) => [k, v.name])), d.shift)}</div>
+    <div class="q"><div class="q-label">1. 今日班次${rs && d.shift === rs ? ' <span class="chip ok">已跟班表填好</span>' : ''}</div>${opts('shift', Object.fromEntries(Object.entries(C.shifts).map(([k, v]) => [k, v.name])), d.shift)}</div>
     <div class="q"><div class="q-label">2. 精神</div>${opts('energy', { low: '好攰', normal: '普通', high: '好有精神' }, d.energy)}</div>
     <div class="q"><div class="q-label">3. 尋晚瞓得點</div>${opts('sleepQ', { bad: '差', ok: '一般', good: '好' }, d.sleepQ)}</div>
     <div class="q"><div class="q-label">4. 有冇邊度痛</div>${opts('pain', PAIN, d.pain)}</div>
@@ -667,7 +795,7 @@ function vToday() {
   let safety = '';
   if (syncReady() && SY.lastError) safety = `<div class="card"><b>☁️ 同步有問題</b><p class="small muted">${esc(SY.lastError)}。紀錄仍然安全存喺呢部機。</p><button class="btn sm ghost" data-act="openSettings">去設定</button></div>`;
   else if (!syncReady() && (S.workouts.length || S.activities.length) && (!S.lastBackup || diffDays(S.lastBackup, today()) >= 7)) safety = `<div class="card"><b>💾 一個禮拜冇備份</b><p class="small muted">開咗同步就唔使理呢個；未開就撳一下匯出備份（存去 iCloud 雲碟或者 AirDrop 去 Mac）。</p><div class="row"><button class="btn sm" data-act="backupNow">一撳備份</button><button class="btn sm ghost" data-act="openSettings">設定同步</button></div></div>`;
-  return `${review}${safety}${main}${insCard}
+  return `${review}${safety}${main}${insCard}${vPlanCard()}
   <div class="grid2" style="margin-bottom:12px">
     <button class="btn blue" data-act="dunno">🤷 唔知今日做咩</button>
     <button class="btn ghost" data-act="lowMode">🌙 好攰／夜更模式</button>
@@ -702,6 +830,36 @@ function vToday() {
     ${wx.known ? `<p class="small muted">🌤️ ${esc(wx.text)}</p>` : ''}
   </div>`;
 }
+function vPlanCard() {
+  if (!hasRoster()) return `<div class="card"><div class="row between"><h2>📅 班表</h2><button class="btn sm" data-act="openRoster">輸入班表</button></div>
+    <p class="small muted">入咗早／中／夜更嘅上落班時間同未來幾星期嘅班，App 會預早排好邊日去 gym、邊日行返屋企，每日問答亦會自動填班次。</p></div>`;
+  const plan = planDays(today(), 7);
+  return `<div class="card"><div class="row between"><h2>📅 未來 7 日</h2><button class="btn sm ghost" data-act="openRoster">改班表</button></div>
+    ${plan.map((p, i) => `<div class="list-item"><div><b>${i === 0 ? '今日' : shortDate(p.date)}（${WD[pd(p.date).getDay()]}）</b> <span class="chip">${p.shift ? esc(shiftLabel(p.shift)) : '未入班'}</span>
+      <div class="small ${p.kind === 'gym' ? '' : 'muted'}">${PLAN_ICON[p.kind] || '·'} ${esc(planText(p))}</div></div></div>`).join('')}
+    <p class="small muted">實際做咩，仍然會跟你當日問答（精神、痛、時間）再調整。</p></div>`;
+}
+function rosterModal() {
+  const T = shiftTimes();
+  const t0 = today(), start = weekStart(t0);
+  let rows = '';
+  for (let i = 0; i < 35; i++) {
+    const d = addDays(start, i);
+    if (d < t0) continue;
+    if (pd(d).getDay() === 1 || d === t0) rows += `<div class="small muted" style="margin:10px 0 2px">${shortDate(weekStart(d))} 嗰週</div>`;
+    const cur = rosterShift(d);
+    rows += `<div class="rrow"><span class="rd">${shortDate(d)} ${WD[pd(d).getDay()]}</span><div class="seg">${Object.entries(ROSTER_SHIFTS).map(([k, v]) =>
+      `<button class="seg-b ${cur === k ? 'on' : ''}" data-act="setRoster" data-d="${d}" data-s="${k}">${v}</button>`).join('')}</div></div>`;
+  }
+  modal(`<h2>📅 班表</h2>
+    <h3>每更上落班時間</h3>
+    ${['early', 'middle', 'night'].map(k => `<div class="ttrow"><span>${C.shifts[k].name}</span><input type="time" id="t-${k}-s" value="${esc(T[k].start)}"><span>–</span><input type="time" id="t-${k}-e" value="${esc(T[k].end)}"></div>`).join('')}
+    <button class="btn sm" data-act="saveShiftTimes" style="margin-top:6px">儲存時間</button>
+    <h3 style="margin-top:18px">未來 5 星期（撳一下揀，再撳一下清除）</h3>
+    <p class="small muted">早＝早更、中＝中更、夜＝夜更、休＝休息日。即撳即存，會同步去其他裝置。</p>
+    ${rows}
+    <div style="height:12px"></div><button class="btn block ghost" data-act="closeModal">完成</button>`);
+}
 function progressLine(label, v, target, unit) {
   const pct = Math.min(100, Math.round(100 * v / target));
   return `<div style="margin:8px 0"><div class="row between small"><span>${label}</span><span>${v} / ${target} ${unit}${v >= target ? ' ✅' : ''}</span></div><div class="bar"><i style="width:${pct}%"></i></div></div>`;
@@ -709,7 +867,7 @@ function progressLine(label, v, target, unit) {
 
 // ---------- 訓練頁 ----------
 function vTrain() {
-  if (S.active) return vSession();
+  if (S.active) return S.active.guided ? vGuided() : vSession();
   const ph = phase();
   const gymN = gymWorkouts().length;
   const next = nextTemplate();
@@ -771,6 +929,7 @@ function vSession() {
     <div class="big">${esc(workoutName({ type: a.type, mode: a.mode }))}</div>
     <p class="small">目標 RPE ${a.mode === 'return' ? 6 : C.phases[ph].rpe}${ph === 1 ? '（頭 4 週唔好做到力竭）' : ''} · 已經 ${mins} 分鐘</p>
     <p class="small muted">每組做完撳 ✓，會自動開始休息計時。RPE 10 = 一下都做唔到；7 = 仲有 3 下。</p>
+    <button class="btn block" data-act="guidedOn">▶️ 引導模式（一個一個動作帶住做）</button>
     ${a.pain && a.pain !== 'none' ? `<p class="small" style="color:var(--warn)">${esc(C.painAdvice[a.pain])}</p>` : ''}
   </div>
   <div class="card">${a.items.map((it, i) => {
@@ -804,6 +963,53 @@ function vSession() {
   <button class="btn block danger" data-act="cancelGym">放棄今次（唔儲存）</button>`;
 }
 
+const curSet = it => it.sets.findIndex(x => !x.done);
+function vGuided() {
+  const a = S.active, n = a.items.length;
+  if (!n) return vSession();
+  if (UI.gi == null || UI.gi >= n) { const k = a.items.findIndex(x => curSet(x) >= 0); UI.gi = k < 0 ? n - 1 : k; }
+  const i = UI.gi, it = a.items[i], ex = C.exercises[it.key], j = curSet(it), s = j >= 0 ? it.sets[j] : null;
+  const total = sum(a.items.map(x => x.sets.length)), done = sum(a.items.map(x => x.sets.filter(y => y.done).length));
+  const allDone = done === total;
+  const prog = progression(it.key, it.reps);
+  if (adj().deload[it.key]) prog.text = '🔧 教練調整：今次減 10% 重量，專心做足次數同姿勢。';
+  const unit = ex.unit === 'sec' ? '秒' : '下';
+  const rpeOpts = ['', 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
+  const prev = j > 0 ? it.sets[j - 1] : null;
+  const nextIt = a.items.slice(i + 1).find(x => curSet(x) >= 0);
+  const wu = j === 0 ? warmupText(it.key, prog.w) : '';
+  return `<div class="card">
+    <div class="row between small muted"><span>動作 ${i + 1} / ${n}</span><span>已完成 ${done} / ${total} 組 · ${Math.round((Date.now() - a.startedAt) / 60000)} 分鐘</span></div>
+    <div class="bar" style="margin:6px 0 12px"><i style="width:${Math.round(100 * done / total)}%"></i></div>
+    ${animHtml(it.key, 'lg')}
+    <div class="gname">${exLink(it.key, esc(ex.name))}</div>
+    ${it.subFrom ? '<span class="chip warn">因痛替代</span>' : ''}
+    <p class="small muted" style="margin:4px 0">✅ ${esc(ex.cue)}</p>
+    <div class="sug">${esc(prog.text)}${wu ? '<br>' + esc(wu) : ''}</div>
+    ${s ? `<div class="gset">第 ${j + 1} / ${it.sets.length} 組 · 目標 ${it.reps[0]}–${it.reps[1]} ${unit}</div>
+      ${prev ? `<p class="small muted" style="margin:0 0 6px">上一組：${prev.w !== '' && prev.w != null ? esc(prev.w) + 'kg × ' : ''}${esc(prev.r)} ${unit}${prev.rpe ? ' @ RPE ' + esc(prev.rpe) : ''}</p>` : ''}
+      <div class="grid3">
+        <label class="f" style="margin:0">重量 kg<input type="number" inputmode="decimal" step="0.5" ${ex.unit === 'kg' ? '' : 'disabled'} data-set="${i},${j},w" value="${esc(s.w)}"></label>
+        <label class="f" style="margin:0">${unit}數<input type="number" inputmode="numeric" placeholder="${it.reps[1]}" data-set="${i},${j},r" value="${esc(s.r)}"></label>
+        <label class="f" style="margin:0">RPE<select data-set="${i},${j},rpe">${rpeOpts.map(v => `<option value="${v}" ${String(s.rpe) === String(v) ? 'selected' : ''}>${v === '' ? '—' : v}</option>`).join('')}</select></label>
+      </div>
+      <button class="btn block xl" data-act="doneSet" data-i="${i}" data-j="${j}" style="margin-top:12px">✓ 做完第 ${j + 1} 組</button>
+      <p class="small muted" style="margin:6px 0 0">撳完會自動開始休息 ${restSecs(it.key)} 秒計時。次數唔填就當做到 ${it.reps[1]} ${unit}。</p>`
+    : `<div class="gset">呢個動作完成 ✅</div>${nextIt ? `<button class="btn block xl" data-act="gGo" data-i="${a.items.indexOf(nextIt)}">下一個：${esc(C.exercises[nextIt.key].name)} →</button>` : ''}`}
+    <div class="grid2" style="margin-top:12px"><button class="btn ghost" data-act="gGo" data-i="${i - 1}" ${i === 0 ? 'disabled' : ''}>← 上一個</button><button class="btn ghost" data-act="gGo" data-i="${i + 1}" ${i === n - 1 ? 'disabled' : ''}>下一個 →</button></div>
+  </div>
+  ${allDone ? '<div class="card hero"><div class="big">全部完成 🎉</div><p>做得好！記得伸展 5 分鐘。</p><button class="btn block" data-act="finishGym">儲存訓練</button></div>' : ''}
+  <div class="grid2"><button class="btn ghost" data-act="guidedOff">📋 睇成個清單</button><button class="btn ghost" data-act="finishGym">提早完成</button></div>`;
+}
+// 引導模式時保持螢幕唔熄（iOS 16.4+ 支援；唔支援就算）
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (on && !wakeLock && navigator.wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); }
+    if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch (e) { wakeLock = null; }
+}
+
 function finishGym() {
   const a = S.active;
   const done = a.items.some(it => it.sets.some(s => s.done));
@@ -815,7 +1021,7 @@ function finishGym() {
   const A = adj();
   a.items.forEach(it => { if (A.deload[it.key] && it.sets.some(s => s.done)) delete A.deload[it.key]; });
   S.active = null;
-  stopTimer();
+  stopTimer(); keepAwake(false); UI.gi = null;
   save(); checkMilestones(); UI.tab = 'today'; render(); window.scrollTo(0, 0);
   toast('訓練完成！記得飲水同食啲蛋白質 💪');
 }
@@ -847,7 +1053,10 @@ function vActivity() {
   </div>
   <div class="card">
     <h2>🏠 ${esc(C.commute.title)}</h2>
-    <p class="small muted">中大 → 大埔屋企步行大約 ${C.rules.commuteKm} km。</p>
+    <p class="small muted">中大 → 大埔屋企步行大約 ${C.rules.commuteKm} km（行 ${C.commute.minutes.walk} 分／踩 ${C.commute.minutes.cycle} 分）。</p>
+    ${(() => { const cm = commuteAdvice(today()); return `<div class="sug"><b>今日${cm.shift ? `（${esc(C.shifts[cm.shift] ? C.shifts[cm.shift].name : cm.shift)}）` : ''}：</b>${cm.lines.map(esc).join('<br>')}</div>`; })()}
+    <div class="grid2" style="margin:8px 0"><a class="btn sm ghost" href="${mapUrl('walking')}" target="_blank" rel="noopener">🗺️ 行路路線</a><a class="btn sm ghost" href="${mapUrl('bicycling')}" target="_blank" rel="noopener">🗺️ 單車路線</a></div>
+    <p class="small muted">地圖終點：${esc(S.profile.home || C.commute.homeDefault)}（可以喺 ⚙︎ 設定改）</p>
     <ul class="clean small">${C.commute.options.map(o => `<li><b>${esc(o.level)}</b>：${esc(o.text)}</li>`).join('')}</ul>
     <p class="small">跑步準備度：最長一次跑步記錄 <b>${longest} 分鐘</b> ${ready ? '✅ 可以考慮試跑成程（揀涼爽日子）' : `→ 要可以連續跑 ${C.rules.commuteRunReadyMinutes} 分鐘先試跑成程，之前用跑行交替`}</p>
     <details><summary>安全同實用提示</summary><ul class="clean small">${C.commute.safety.map(s => `<li>${esc(s)}</li>`).join('')}</ul></details>
@@ -1133,6 +1342,8 @@ function settingsModal() {
     <div class="grid2"><label class="f">身高 cm<input id="sH" type="number" value="${esc(p.heightCm)}"></label>
     <label class="f">開始日期<input id="sStart" type="date" value="${esc(p.startDate)}"></label></div>
     <label class="row f"><input type="checkbox" id="sGf" ${p.gfMode ? 'checked' : ''}> 女朋友模式（建議一齊做嘅活動）</label>
+    <label class="f">屋企位置（通勤地圖終點，只存喺你嘅私人資料）<input id="sHome" value="${esc(p.home || '')}" placeholder="${esc(C.commute.homeDefault)}"></label>
+    <button class="btn block ghost" data-act="openRoster" style="margin-bottom:8px">📅 班表同上落班時間</button>
     <label class="f">訓練階段<select id="sPhase"><option value="auto" ${p.phaseOverride === 'auto' ? 'selected' : ''}>自動（建議）</option><option value="1" ${p.phaseOverride === '1' ? 'selected' : ''}>固定第 1 階段</option><option value="2" ${p.phaseOverride === '2' ? 'selected' : ''}>固定第 2 階段</option></select></label>
     <button class="btn block" data-act="saveSettings">儲存設定</button>
     <h3 style="margin-top:20px">☁️ 多裝置同步（GitHub 私人 repo）</h3>
@@ -1170,6 +1381,7 @@ function exportData() {
     exerciseCompletion: exerciseCompletion().map(({ key, name, planned, done }) => ({ key, name, planned, done })),
     adjustments: adj(), adjustLog: S.adjustLog || [], dismissedInsights: S.insightSeen || {},
     weeklySummaries: weeklySummaries(12),
+    roster: S.roster || {}, shiftTimes: S.shiftTimes || null, shiftTimesEffective: shiftTimes(), plan7: planDays(today(), 7).map(p => ({ date: p.date, shift: p.shift, kind: p.kind, text: planText(p) })),
     profile: S.profile, body: S.body, workouts: S.workouts, activities: S.activities, days: S.days, achieved: S.achieved
   };
 }
@@ -1193,6 +1405,7 @@ function summaryText() {
   if (ins.length) { lines.push('## App 自動觀察'); ins.forEach(i => lines.push(`- [${i.level}] ${i.title}：${i.detail}`)); lines.push(''); }
   const mix = activityMix(28);
   lines.push('## 近 28 日做得多／少', ...mix.list.map(m => `- ${m.label}: ${m.times} 次 / ${m.minutes} 分鐘`), mix.missing.length ? `- 未做過：${mix.missing.join('、')}` : '', '');
+  if (hasRoster()) lines.push('## 未來 7 日班表計劃', ...planDays(today(), 7).map(p => `- ${p.date} ${p.shift ? shiftLabel(p.shift) : '未入班'}：${planText(p)}`), '');
   const al = adjustList();
   if (al.length) lines.push('## 已套用嘅自動調整', ...al.map(a => '- ' + a.text), '');
   lines.push('## 每週', '| 週一 | gym | 帶氧分 | 步數 | 瞓 | 水L | 體重 | 完成度 |', '|---|---|---|---|---|---|---|---|');
@@ -1360,12 +1573,23 @@ const actions = {
     const it = S.active.items[el.dataset.i], s = it.sets[el.dataset.j];
     s.done = !s.done;
     if (s.done && s.r === '') s.r = it.reps[1];
+    if (s.done && S.active.guided) {
+      it.sets.forEach(x => { if (!x.done && s.w !== '') x.w = s.w; });
+      if (curSet(it) < 0) {
+        const k = S.active.items.findIndex(x => curSet(x) >= 0);
+        if (k >= 0) { UI.gi = k; toast(`下一個動作：${C.exercises[S.active.items[k].key].name}`); }
+      }
+    }
     save(); render();
+    if (s.done && S.active.guided) window.scrollTo(0, 0);
     if (s.done) startTimer(restSecs(it.key));
   },
   addSet(el) { const it = S.active.items[el.dataset.i]; const l = it.sets[it.sets.length - 1]; it.sets.push({ w: l ? l.w : '', r: '', rpe: '', done: false }); save(); render(); },
   finishGym,
-  cancelGym() { if (confirm('確定放棄？今次記錄唔會儲存。')) { S.active = null; stopTimer(); save(); render(); } },
+  cancelGym() { if (confirm('確定放棄？今次記錄唔會儲存。')) { S.active = null; stopTimer(); keepAwake(false); save(); render(); } },
+  guidedOn() { S.active.guided = true; UI.gi = null; persist(); keepAwake(true); render(); window.scrollTo(0, 0); },
+  guidedOff() { S.active.guided = false; persist(); keepAwake(false); render(); window.scrollTo(0, 0); },
+  gGo(el) { const k = Number(el.dataset.i); if (S.active && k >= 0 && k < S.active.items.length) { UI.gi = k; render(); window.scrollTo(0, 0); } },
   delWorkout(el) { if (confirm('刪除呢個訓練紀錄？')) { S.deleted[el.dataset.id] = Date.now(); S.workouts = S.workouts.filter(w => w.id !== el.dataset.id); save(); render(); } },
   delAct(el) { if (confirm('刪除呢個活動？')) { S.deleted[el.dataset.id] = Date.now(); S.activities = S.activities.filter(a => a.id !== el.dataset.id); save(); render(); } },
   logAct(el) { closeModal(); actModal({ kind: el.dataset.kind, min: el.dataset.min, km: el.dataset.km, commute: !!el.dataset.commute, int: el.dataset.int }); },
@@ -1386,11 +1610,29 @@ const actions = {
   },
   async delPhoto(el) { if (confirm('刪除呢張相？')) { await photoTx('readwrite', st => st.delete(el.dataset.id)); fillPhotos(); } },
   openSettings() { settingsModal(); },
+  openRoster() { rosterModal(); },
+  setRoster(el) {
+    const d = el.dataset.d, v = rosterShift(d) === el.dataset.s ? '' : el.dataset.s;
+    S.roster = S.roster || {};
+    S.roster[d] = { s: v, upd: Date.now() };
+    el.parentNode.querySelectorAll('.seg-b').forEach(b => b.classList.toggle('on', b.dataset.s === v));
+    save(); render();
+  },
+  saveShiftTimes() {
+    const t = {};
+    for (const k of ['early', 'middle', 'night']) {
+      const a = $(`#t-${k}-s`).value, b = $(`#t-${k}-e`).value;
+      if (!toMin(a) && a !== '00:00' || !toMin(b) && b !== '00:00') { toast(`請填好${C.shifts[k].name}時間`); return; }
+      t[k] = { start: a, end: b };
+    }
+    S.shiftTimes = { t, upd: Date.now() };
+    save(); render(); toast('已儲存上落班時間');
+  },
   closeModal,
   saveSettings() {
     const p = S.profile;
     p.nickname = $('#sName').value.trim(); p.heightCm = num($('#sH').value) || '';
-    p.startDate = $('#sStart').value || p.startDate; p.gfMode = $('#sGf').checked; p.phaseOverride = $('#sPhase').value; p.upd = Date.now();
+    p.startDate = $('#sStart').value || p.startDate; p.gfMode = $('#sGf').checked; p.phaseOverride = $('#sPhase').value; p.home = $('#sHome').value.trim(); p.upd = Date.now();
     setNote($('#sNote').value);
     save(); closeModal(); render(); toast('已儲存設定');
   },
@@ -1468,9 +1710,10 @@ try { if (navigator.storage && navigator.storage.persist) navigator.storage.pers
 render();
 checkMilestones();
 loadWeather();
+loadSun();
 syncNow(false);
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) { render(); loadWeather(); syncNow(false); }
+  if (!document.hidden) { render(); loadWeather(); loadSun(); syncNow(false); if (S.active && S.active.guided) keepAwake(true); }
   else if (syncTimer) syncNow(false); // 收埋 App 之前，即刻上傳未同步嘅改動
 });
 window.addEventListener('online', () => syncNow(false));
