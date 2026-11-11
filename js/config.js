@@ -4,7 +4,7 @@
 // 改完記得將 sw.js 入面嘅 CACHE_VERSION 加 1，手機先會攞到新版。
 // =============================================================
 window.CONFIG = {
-  version: '1.4.2',
+  version: '1.4.3',
 
   // ---------- 每週 / 每日目標 ----------
   targets: {
@@ -41,15 +41,15 @@ window.CONFIG = {
     legPress:   { name: '腿推機 Leg Press', type: 'compound', unit: 'kg', inc: 5, rest: '90–120 秒',
                   cue: '腳掌成個踩實，膝頭跟住腳尖方向；落到大約 90 度，推返上去唔好鎖死膝頭。',
                   sub: '高腳杯深蹲 Goblet Squat／徒手分腿蹲', avoid: ['knee'], painSub: { knee: 'gluteBridge' } },
-    row:        { name: '坐姿划船 Seated / Machine Row', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
-                  cue: '挺胸，先將膊頭向後收，再用手肘拉向肚臍；唔好用腰向後拗。',
-                  sub: '單手啞鈴划船', avoid: [], painSub: {} },
+    row:        { name: '坐姿划船（鋼索）Seated Cable Row', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
+                  cue: '鋼索滑輪機兩邊滑輪調到最低，坐喺訓練椅；挺胸，先夾背，再用手肘拉向肚臍；唔好用腰向後拗。',
+                  sub: '單手啞鈴划船（一隻手同膝頭撐喺凳上）', avoid: [], painSub: {} },
     chestPress: { name: '器械胸推 Machine Chest Press', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
                   cue: '肩胛骨收埋貼住背墊，推到手差唔多直但唔鎖死，慢慢放返。',
                   sub: '啞鈴臥推／跪地掌上壓', avoid: ['shoulder'], painSub: { shoulder: null } },
-    latPulldown:{ name: '滑輪下拉 Lat Pulldown', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
-                  cue: '拉向鎖骨位置，手肘向下向後；身體唔好大幅向後瞓。',
-                  sub: '輔助引體上升／彈力帶下拉', avoid: ['shoulder'], painSub: { shoulder: 'row' } },
+    latPulldown:{ name: '滑輪下拉（鋼索）Cable Pulldown', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
+                  cue: '鋼索滑輪機兩邊滑輪調到最高，跪低或者坐喺訓練椅；手肘向下向後，將手柄拉到胸口兩側；身體唔好大幅向後瞓。',
+                  sub: '單手鋼索下拉（一次一邊）', avoid: ['shoulder'], painSub: { shoulder: 'row' } },
     latRaise:   { name: '啞鈴側平舉 Lateral Raise', type: 'isolation', unit: 'kg', inc: 1, rest: '60–90 秒',
                   cue: '手肘微彎，舉到膊頭高度就夠；放落要慢，唔好聳膊。',
                   sub: '器械側平舉／彈力帶側平舉', avoid: ['shoulder'], painSub: { shoulder: null } },
@@ -173,7 +173,7 @@ window.CONFIG = {
     office: { name: '辦公時間', tip: '放工 6–9 點健身室人多：可以行／踩返屋企做帶氧，gym 留俾早更或者休息日。' },
     middle: { name: '晚更', tip: '返工前去 gym（避開放工人多時段），或者放工後行 30 分鐘。' },
     night:  { name: '夜更', tip: '夜更後唔做重訓。行 15–20 分鐘 + 伸展，然後優先瞓覺。' },
-    rest:   { name: '休息日', tip: '最適合做完整 gym；平日早上或者下午康文署健身室人較少。' },
+    rest:   { name: '休息日', tip: '最適合做完整 gym；平日早上或者下午 chocoZAP 人較少。' },
     travel: { name: '旅行', tip: '旅行行路都計活動分鐘，返嚟照常繼續，唔使內疚。' },
     sick:   { name: '病咗', tip: '今日休息、飲水、瞓覺。好返先慢慢恢復。' }
   },
@@ -195,6 +195,15 @@ window.CONFIG = {
     Day: { name: 'Day', start: '09:00', end: '18:00' },
     off: { name: '休',  start: null,    end: null }
   },
+  // 點樣揀／睇重量（第一次做、圖鑑、引導模式都會顯示）
+  weightGuide: [
+    '機上面嘅重量：望住旁邊嗰疊鐵片，每塊印住數字。將插銷插入邊一塊，數字就係重量，App 記低呢個數字就得。',
+    '鋼索滑輪機：插銷位同樣有數字。呢種機通常有滑輪減力，拉起嚟會覺得比數字輕，正常。每次記同一個數字就可以比較進度。',
+    '可調式啞鈴：轉手柄兩邊個轉盤，見到嘅數字就係一隻啞鈴嘅重量（記一隻嘅重量，唔使加埋兩隻）。',
+    '第一次試重量：由最輕 2–3 塊開始做 5 下熱身 → 每次加 1 塊再試幾下 → 揀一個做到目標次數上限、但仲剩大約 3 下力（RPE 7）嘅重量，記低。',
+    '揀錯唔緊要：太輕就下一組加 1 塊；做唔夠目標最少次數就減 1 塊。下次 App 會根據紀錄提你加唔加重。'
+  ],
+
   together: {
     window: ['07:00', '22:00'],  // 可以做運動嘅時段
     commuteBuffer: 45,           // 上班前後預留（分鐘）

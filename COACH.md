@@ -34,6 +34,7 @@ gh api repos/benleung2004/fitness-data/contents/data/fitness.json -H "Accept: ap
 - 目標、規則數字 → `js/config.js` 嘅 `targets`、`rules`
 - 動作、組數、次數、替代動作 → `js/config.js` 嘅 `exercises`、`workouts`
 - 班次提示、飲食建議、通勤建議 → `js/config.js`
+- 用戶嘅 gym：chocoZAP 太和（有鋼索滑輪機、可調凳、啞鈴；冇下拉專用機同坐姿划船機，所以 row／latPulldown 用鋼索做）。「點揀重量」教學 → `js/config.js` 嘅 `weightGuide`
 - 動作教學（中文步驟、常見錯誤、示範圖）→ `js/library.js`；新動作要加相就由 free-exercise-db 下載、縮到 480px 闊放入 `img/ex/<key>-0.jpg`／`-1.jpg`，再加入 `sw.js` 預先快取清單
 - 推薦邏輯 → `js/app.js` 嘅 `recommend()`
 - 班表排程（邊日 gym、通勤、恢復）→ `js/app.js` 嘅 `planDays()`、`gymScore()`、`commuteFeasible()`；預設上落班時間 → `js/config.js` 嘅 `shiftDefaults`

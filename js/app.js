@@ -570,7 +570,7 @@ function planText(p) {
     return `屋企徒手肌力 3 輪（未有 gym 暫代）：${when}`;
   }
   if (p.kind === 'gym') {
-    if (p.shift === 'rest') return rosterShift(addDays(p.date, -1)) === 'night' ? 'Gym：夜更後先瞓夠，下晝 3 點後先去' : 'Gym：上晝 10–12 點（健身室人少）';
+    if (p.shift === 'rest') return rosterShift(addDays(p.date, -1)) === 'night' ? 'Gym：夜更後先瞓夠，下晝 3 點後先去' : 'Gym：上晝 10–12 點（人少）';
     if (p.shift === 'middle' && st != null && st >= 660) return `Gym：返工前 ${fmtMin(st - 150)} 開始（做大約 75 分鐘）`;
     return `Gym：放工後 ${e != null ? fmtMin(e + 45) : ''} 左右`;
   }
@@ -682,7 +682,8 @@ function recommend(ci) {
     let k = kind;
     if (k === 'run' && wx.runBad) { k = 'cycle'; why.push('天氣熱／濕，跑步改踩單車或者快行'); }
     if (wx.outdoorBad && ['walk', 'cycle', 'run', 'hike'].includes(k)) {
-      return { kind: 'home', icon: '🏠', title: C.homeCircuit.name, summary: '天氣唔適合戶外，改做屋企循環（或者去健身室踩單車 30 分鐘）。', why: why.concat(reason || []), extra, minimum: '最低版本：做 1 輪循環。' };
+      if (!noGym()) return { kind: 'cardio', cardioKind: 'cycle', minutes: mins, icon: '🚲', title: `chocoZAP 室內帶氧 ${mins} 分鐘`, summary: '天氣唔適合戶外：去 chocoZAP 踩單車、行斜坡跑步機或者太空漫步機（對膝頭最輕鬆），中等強度：微微喘氣、仲講到嘢。', why: why.concat(reason || []), extra, minimum: '最低版本：踩 15 分鐘。' };
+      return { kind: 'home', icon: '🏠', title: C.homeCircuit.name, summary: '天氣唔適合戶外，改做屋企循環。', why: why.concat(reason || []), extra, minimum: '最低版本：做 1 輪循環。' };
     }
     const label = { walk: '快行', cycle: '踩單車', run: '跑行交替', hike: '行山' }[k] || '快行';
     return { kind: 'cardio', cardioKind: k, minutes: mins, icon: k === 'cycle' ? '🚲' : '🚶', title: `${label} ${mins} 分鐘`, summary: `中等強度：微微喘氣、仲講到嘢。${ci.shift === 'rest' ? '' : shiftTip}`, why: why.concat(reason || []), extra, minimum };
@@ -699,7 +700,7 @@ function recommend(ci) {
     if (short) r.push(shortByCoach ? '教練調整：預設做 30 分鐘精簡版（頭 4 個動作）' : '時間得 30 分鐘：做精簡版（頭 4 個動作）');
     return { kind: 'gym', template: tmpl, mode, icon: '🏋️', title: (isReturn ? '回歸訓練：' : '') + C.workouts[tmpl].name,
              summary: `${C.phases[ph].note} ${shiftTip}`, why: why.concat(r),
-             extra: extra.concat('康文署健身室：通常平日上晝同下晝較少人，盡量避開放工 6–9 點。'),
+             extra: extra.concat('chocoZAP 太和：平日上晝同下晝通常較少人，盡量避開放工 6–9 點。第一次用部機，記得先用輕重量試。'),
              minimum: '最低版本：每個動作做 1 組，20 分鐘搞掂。' };
   };
 
@@ -969,6 +970,7 @@ function vTrain() {
       <div class="big">${esc(C.phases[ph].name)}</div>
       <p>${esc(C.phases[ph].note)}</p>
       <p class="small muted">每組休息：複合動作 90–120 秒，單關節／核心 60–90 秒。熱身 5–8 分鐘踩單車或快行，完咗伸展 5 分鐘。</p>
+      ${weightGuideHtml(false)}
       ${p2}
     </div>
     ${C.phases[ph].rotation.map(tmplCard).join('')}
@@ -1012,6 +1014,7 @@ function vSession() {
     <div class="big">${esc(workoutName({ type: a.type, mode: a.mode }))}</div>
     <p class="small">目標 RPE ${a.mode === 'return' ? 6 : C.phases[ph].rpe}${ph === 1 ? '（頭 4 週唔好做到力竭）' : ''} · 已經 ${mins} 分鐘</p>
     <p class="small muted">每組做完撳 ✓，會自動開始休息計時。RPE 10 = 一下都做唔到；7 = 仲有 3 下。</p>
+    ${weightGuideHtml(!gymWorkouts().length)}
     <button class="btn block" data-act="guidedOn">▶️ 引導模式（一個一個動作帶住做）</button>
     ${a.pain && a.pain !== 'none' ? `<p class="small" style="color:var(--warn)">${esc(C.painAdvice[a.pain])}</p>` : ''}
   </div>
@@ -1047,6 +1050,7 @@ function vSession() {
 }
 
 const curSet = it => it.sets.findIndex(x => !x.done);
+const weightGuideHtml = open => `<details ${open ? 'open' : ''}><summary>⚖️ 點樣睇／揀重量？</summary><ul class="clean small">${C.weightGuide.map(x => `<li>${esc(x)}</li>`).join('')}</ul></details>`;
 function vGuided() {
   const a = S.active, n = a.items.length;
   if (!n) return vSession();
@@ -1069,6 +1073,7 @@ function vGuided() {
     ${it.subFrom ? '<span class="chip warn">因痛替代</span>' : ''}
     <p class="small muted" style="margin:4px 0">✅ ${esc(ex.cue)}</p>
     <div class="sug">${esc(prog.text)}${wu ? '<br>' + esc(wu) : ''}</div>
+    ${ex.unit === 'kg' ? weightGuideHtml(prog.w == null && j === 0) : ''}
     ${s ? `<div class="gset">第 ${j + 1} / ${it.sets.length} 組 · 目標 ${it.reps[0]}–${it.reps[1]} ${unit}</div>
       ${prev ? `<p class="small muted" style="margin:0 0 6px">上一組：${prev.w !== '' && prev.w != null ? esc(prev.w) + 'kg × ' : ''}${esc(prev.r)} ${unit}${prev.rpe ? ' @ RPE ' + esc(prev.rpe) : ''}</p>` : ''}
       <div class="grid3">
@@ -1363,6 +1368,7 @@ function exModal(key) {
     ${ex ? `<p class="small">✅ <b>重點：</b>${esc(ex.cue)}</p>` : ''}
     <h3>常見錯誤</h3><ul class="clean small">${it.mistakes.map(x => `<li>❌ ${esc(x)}</li>`).join('')}</ul>
     ${ex ? `<p class="small">🔁 <b>冇呢部機／做唔到：</b>${esc(ex.sub)}</p><p class="small muted">休息：${esc(ex.rest)}</p>` : ''}
+    ${ex && ex.unit === 'kg' ? weightGuideHtml(false) : ''}
     ${used.length ? `<p class="small"><b>📅 喺你計劃入面：</b>${used.map(esc).join('、')}</p>` : ''}
     <a class="btn block blue" href="${yt}" target="_blank" rel="noopener">▶️ YouTube 搵教學片</a>
     ${it.credit ? `<p class="small muted" style="margin-top:8px">${esc(it.credit)}</p>` : ''}
