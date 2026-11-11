@@ -66,6 +66,8 @@ function mergeData(R) {
       checkin: useR ? r.checkin : l.checkin, rec: useR ? r.rec : (l.rec ?? r.rec) };
     const restR = (r.restUpd || 0) > (l.restUpd || 0) ? r : l;
     if (restR.restUpd) { S.days[d].restDay = !!restR.restDay; S.days[d].restUpd = restR.restUpd; }
+    const hR = ((r.health || {}).at || 0) > ((l.health || {}).at || 0) ? r.health : l.health;
+    if (hR) S.days[d].health = hR;
   });
   if (R.profile && ((!S.profile.onboarded && R.profile.onboarded) || (R.profile.upd || 0) > (S.profile.upd || 0))) S.profile = R.profile;
   Object.entries(R.achieved || {}).forEach(([k, v]) => { if (!S.achieved[k] || v < S.achieved[k]) S.achieved[k] = v; });
@@ -645,6 +647,62 @@ function togetherText(d) {
 }
 const mapUrl = mode => `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(C.commute.origin)}&destination=${encodeURIComponent(S.profile.home || C.commute.homeDefault)}&travelmode=${mode}`;
 
+// ---------- Apple Watch（經 iPhone「捷徑」拷貝 → 貼上，或者 Safari 網址 #h&…） ----------
+const SHORTCUT_NAME = '健身數據';
+const firstNum = v => { const m = String(v ?? '').replace(/,/g, '').match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+// 睡眠可能係秒、分鐘、小時，或者「7 小時 12 分」「7:12:00」
+function sleepHours(v) {
+  const t = String(v ?? '').replace(/,/g, '').trim();
+  if (!t) return null;
+  const hh = t.match(/(\d+(?:\.\d+)?)\s*(?:小時|hr|h)/i), mm = t.match(/(\d+(?:\.\d+)?)\s*(?:分|min)/i);
+  if (hh || mm) return r1((hh ? parseFloat(hh[1]) : 0) + (mm ? parseFloat(mm[1]) / 60 : 0));
+  const c = t.match(/^(\d+):(\d+)(?::(\d+))?$/);
+  if (c) return r1(+c[1] + +c[2] / 60);
+  const n = firstNum(t);
+  if (n == null) return null;
+  if (n > 1000) return r1(n / 3600);   // 秒
+  if (n > 24) return r1(n / 60);       // 分鐘
+  return r1(n);                        // 小時
+}
+function parseHealth(text) {
+  const t = String(text || '').trim();
+  const i = t.search(/(^|[&#:])steps=|(^|[&#:])sleep=|(^|[&#:])rhr=/);
+  if (i < 0) return null;
+  const q = new URLSearchParams(t.slice(i).replace(/^[&#:]/, ''));
+  const out = {};
+  const steps = firstNum(q.get('steps')); if (steps != null && steps >= 0 && steps < 200000) out.steps = Math.round(steps);
+  const sl = sleepHours(q.get('sleep')); if (sl != null && sl > 0 && sl <= 20) out.sleep = sl;
+  const rhr = firstNum(q.get('rhr')); if (rhr != null && rhr > 25 && rhr < 150) out.rhr = Math.round(rhr);
+  const hrv = firstNum(q.get('hrv')); if (hrv != null && hrv > 0 && hrv < 300) out.hrv = Math.round(hrv);
+  const kcal = firstNum(q.get('kcal')); if (kcal != null && kcal >= 0 && kcal < 10000) out.kcal = Math.round(kcal);
+  const ex = firstNum(q.get('ex')); if (ex != null && ex >= 0 && ex < 1440) out.ex = Math.round(ex);
+  const km = firstNum(q.get('km')); if (km != null && km >= 0 && km < 200) out.km = r1(km);
+  return Object.keys(out).length ? out : null;
+}
+function importHealth(h) {
+  const x = day();
+  if (h.steps != null) x.steps = Math.max(x.steps || 0, h.steps);
+  if (h.sleep != null) x.sleepH = h.sleep;
+  const keep = {};
+  ['rhr', 'hrv', 'kcal', 'ex', 'km', 'sleep'].forEach(k => { if (h[k] != null) keep[k] = h[k]; });
+  x.health = Object.assign({}, x.health || {}, keep, { at: Date.now() });
+  save(); render();
+  toast('⌚ 已讀取：' + [h.steps != null && `步數 ${h.steps}`, h.sleep != null && `瞓 ${h.sleep}h`, h.rhr != null && `靜止心率 ${h.rhr}`].filter(Boolean).join('、'));
+}
+// 同之前 14 日比較：靜止心率高咗、HRV 低咗 = 恢復一般
+function recoveryHint(d = today()) {
+  const h = (S.days[d] || {}).health;
+  if (!h) return null;
+  const past = [];
+  for (let i = 1; i <= 14; i++) { const v = (S.days[addDays(d, -i)] || {}).health; if (v) past.push(v); }
+  const base = k => { const a = past.map(v => v[k]).filter(v => v != null); return a.length >= 5 ? avg(a) : null; };
+  const bR = base('rhr'), bH = base('hrv');
+  const msgs = [];
+  if (h.rhr != null && bR != null && h.rhr >= bR + 7) msgs.push(`靜止心率 ${h.rhr}（平時大約 ${Math.round(bR)}）`);
+  if (h.hrv != null && bH != null && h.hrv <= bH * 0.75) msgs.push(`HRV ${h.hrv}（平時大約 ${Math.round(bH)}）`);
+  return msgs.length ? `⌚ 手錶顯示今日恢復一般：${msgs.join('、')}。可以做輕啲，或者改做恢復模式。` : null;
+}
+
 // ---------- 推薦引擎 ----------
 function recommend(ci) {
   const t = today();
@@ -660,6 +718,7 @@ function recommend(ci) {
   const minimum = '最低版本：行 10 分鐘 + 伸展 5 分鐘。做咗就算贏，唔使完美。';
   const doneToday = S.workouts.some(w => w.date === t && GYM_TYPES.concat('home').includes(w.type));
   if (ci.pain !== 'none') extra.push(C.painAdvice[ci.pain]);
+  if (recoveryHint(t)) extra.push(recoveryHint(t));
 
   if (ci.shift === 'sick') return { kind: 'rest', icon: '🛌', title: '今日休息', summary: '病咗就休息、飲水、瞓覺。好返之後用「回歸訓練」慢慢返嚟。', why: ['身體恢復比 streak 重要'], extra, minimum: '今日嘅最低版本：飲夠水、早啲瞓。' };
   if (ci.shift === 'travel') return { kind: 'cardio', cardioKind: 'walk', minutes: 30, icon: '🧳', title: '旅行：行路就係運動', summary: '旅行行嘅路全部可以記做活動分鐘。返嚟之後照常繼續計劃，唔使內疚。', why: [shiftTip], extra, minimum };
@@ -879,6 +938,7 @@ function vToday() {
       <label class="f">尋晚瞓咗（小時）<input type="number" inputmode="decimal" step="0.5" data-field="sleepH" value="${x.sleepH ?? ''}" placeholder="例如 7"></label>
     </div>
   </div>
+  ${vWatchCard(x)}
   <div class="card">
     <h2>快速記錄</h2>
     <div class="quick">
@@ -943,6 +1003,35 @@ function rosterModal() {
     <div class="seg" style="grid-template-columns:1fr 1fr;margin-bottom:8px"><button class="seg-b ${gf ? '' : 'on'}" data-act="rosterWho" data-w="me">我</button><button class="seg-b ${gf ? 'on' : ''}" data-act="rosterWho" data-w="gf">👫 女朋友（可選）</button></div>
     ${head}${rows}
     <div style="height:12px"></div><button class="btn block ghost" data-act="closeModal">完成</button>`);
+}
+function vWatchCard(x) {
+  const h = x.health;
+  const t = h && h.at ? new Date(h.at) : null;
+  return `<div class="card"><div class="row between"><h2>⌚ Apple Watch</h2><button class="btn sm ghost" data-act="watchHelp">點設定</button></div>
+    ${h ? `<p class="small">${[x.steps != null && `👟 ${x.steps} 步`, h.sleep != null && `😴 ${h.sleep}h`, h.rhr != null && `❤️ 靜止 ${h.rhr}`, h.hrv != null && `HRV ${h.hrv}`, h.ex != null && `🏃 運動 ${h.ex} 分`, h.kcal != null && `🔥 ${h.kcal} kcal`, h.km != null && `📏 ${h.km} km`].filter(Boolean).join(' · ')}</p>
+      <p class="small muted">上次讀取：${pad(t.getHours())}:${pad(t.getMinutes())}</p>` : '<p class="small muted">未讀取。撳「① 行捷徑」，完成後返嚟撳「② 貼上」。</p>'}
+    <div class="grid2"><a class="btn sm ghost" href="shortcuts://run-shortcut?name=${encodeURIComponent(SHORTCUT_NAME)}">① 行捷徑</a><button class="btn sm" data-act="pasteHealth">② 貼上手錶數據</button></div>
+  </div>`;
+}
+function watchHelp() {
+  const steps = [
+    ['打開 iPhone「捷徑」App → 右上角 ＋ 新增捷徑，改名做「' + SHORTCUT_NAME + '」（一定要一模一樣）。', ''],
+    ['步數', '加動作「尋找健康樣本」→ 類型揀「步數」→ 加條件「開始日期」「是今日」。下面加「計算統計數據」→「總和」。再加「設定變數」，改名「步數」。'],
+    ['睡眠', '「尋找健康樣本」→「睡眠分析」→ 條件「開始日期」「在最近 1 日」，再加兩個條件「值」「不是」「在床上」、「值」「不是」「清醒」。加「重複執行每一個」，入面放「取得健康樣本的詳細資料」→「持續時間」。重複之後加「計算統計數據」→「總和」（輸入揀「重複結果」）→「設定變數」叫「睡眠」。'],
+    ['靜止心率', '「尋找健康樣本」→「靜止心率」→ 排序「開始日期」「最新優先」→ 限制 1 個 →「取得健康樣本的詳細資料」→「值」→「設定變數」叫「靜止心率」。'],
+    ['HRV', '「尋找健康樣本」→「心率變異性」→「開始日期」「在最近 1 日」→「計算統計數據」「平均」→「設定變數」叫「HRV」。'],
+    ['（可選）活動能量、運動分鐘、距離', '同步數一樣做法：類型揀「活動能量」、「運動分鐘數」、「步行＋跑步距離」，都係「是今日」+「總和」，變數叫「卡路里」、「運動分鐘」、「距離」。唔做都得。'],
+    ['組合文字', '加動作「文字」，打：fc-health:steps=［步數］&sleep=［睡眠］&rhr=［靜止心率］&hrv=［HRV］&kcal=［卡路里］&ex=［運動分鐘］&km=［距離］（［］入面撳變數插入；冇做嘅可選項目連 & 一齊刪走）。'],
+    ['拷貝', '最後加「拷貝至剪貼板」。'],
+    ['第一次行', '撳 ▶️ 試行，iPhone 會問准唔准讀健康資料，全部允許。之後返嚟健身 App 撳「② 貼上手錶數據」，iPhone 會問「允許貼上」，撳允許。']
+  ];
+  modal(`<h2>⌚ 設定 Apple Watch 同步</h2>
+    <p class="small muted">Apple 唔俾網頁直接讀健康資料，所以用 iPhone「捷徑」讀，再貼返入嚟。設定一次就得，大約 10–15 分鐘。數據只會喺你部手機同你嘅私人 repo。</p>
+    <ol class="clean small">${steps.map(([a, b]) => `<li>${b ? `<b>${esc(a)}</b>：${esc(b)}` : esc(a)}</li>`).join('')}</ol>
+    <h3>每日點用</h3>
+    <ul class="clean small"><li>朝早起身：撳「① 行捷徑」→ 返嚟撳「② 貼上」（讀到尋晚睡眠同心率）。</li><li>夜晚瞓之前再做一次，步數就會更新到成日嘅數。</li><li>都可以喺 Safari 打開：捷徑最後改用「打開 URL」，網址係 App 網址 + <code>#h&amp;steps=…</code>，Safari 版本開咗同步就會自動上傳。</li></ul>
+    <p class="small muted">名稱可能因 iOS 版本有少少唔同（例如「尋找健康樣本」可能叫「尋找健康樣本項目」）。讀唔到某一項唔緊要，App 會照用讀到嘅。</p>
+    <button class="btn block ghost" data-act="closeModal">關閉</button>`);
 }
 function progressLine(label, v, target, unit) {
   const pct = Math.min(100, Math.round(100 * v / target));
@@ -1700,6 +1789,17 @@ const actions = {
   },
   async delPhoto(el) { if (confirm('刪除呢張相？')) { await photoTx('readwrite', st => st.delete(el.dataset.id)); fillPhotos(); } },
   openSettings() { settingsModal(); },
+  watchHelp() { watchHelp(); },
+  async pasteHealth() {
+    let text = '';
+    try { text = await Promise.race([navigator.clipboard.readText(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))]); } catch (e) { text = ''; }
+    const h = parseHealth(text);
+    if (h) { importHealth(h); return; }
+    modal(`<h2>貼上手錶數據</h2><p class="small muted">${text ? '剪貼板入面嘅唔係手錶數據。' : '讀唔到剪貼板。'}先行一次捷徑，或者喺下面長按 → 貼上。</p>
+      <textarea id="healthText" placeholder="fc-health:steps=…"></textarea>
+      <div class="grid2" style="margin-top:8px"><button class="btn ghost" data-act="closeModal">取消</button><button class="btn" data-act="pasteHealthManual">匯入</button></div>`);
+  },
+  pasteHealthManual() { const h = parseHealth($('#healthText').value); if (!h) { toast('格式唔啱，要有 steps= 或者 sleep='); return; } closeModal(); importHealth(h); },
   toggleRestDay(el) {
     const d = el.dataset.d || today(), x = day(d);
     x.restDay = !x.restDay; x.restUpd = Date.now();
@@ -1809,7 +1909,15 @@ function setNote(v) { v = (v || '').trim(); if (v !== S.noteForClaude) { S.noteF
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 // 叫瀏覽器將資料列為「永久儲存」，減少被自動清走嘅機會
 try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then(v => { UI.persisted = v; }); } catch (e) {}
+function hashImport() {
+  if (!/^#h&|^#health/.test(location.hash)) return;
+  const h = parseHealth(decodeURIComponent(location.hash.slice(1)));
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  if (h) importHealth(h);
+}
+window.addEventListener('hashchange', hashImport);
 render();
+hashImport();
 checkMilestones();
 loadWeather();
 loadSun();

@@ -19,6 +19,7 @@ gh api repos/benleung2004/fitness-data/contents/data/fitness.json -H "Accept: ap
    - `adjustments`、`adjustLog`：用戶喺手機已經套用咗嘅自動調整（例如移除咗某個動作）→ 如果應該變成永久改動，就改 `config.js`，並提醒用戶喺手機「設定 → 目前嘅自動調整」還原
    - `weeklySummaries`、`workouts`、`activities`、`days[*].checkin`、`days[*].rec`（當日建議咗咩）
    - `profile.noGym`（未有 gym 會籍：gym 日改做屋企徒手肌力，`home` 訓練當 gym 計）、`days[*].restDay`（用戶揀咗嗰日唔做運動，唔當做「冇去」）
+   - `days[*].health`（Apple Watch 經 iPhone 捷徑匯入：`rhr` 靜止心率、`hrv`、`sleep` 小時、`kcal`、`ex` 運動分鐘、`km`）：睇睡眠／心率同班次、訓練量嘅關係；`days[*].steps`、`sleepH` 有手錶數據時係自動填
    - `roster`（每日班次）、`shiftTimesEffective`（上落班時間）、`gfRoster`（女朋友班次，可選）、`plan7`（App 按班表排嘅未來 7 日，`together` = 兩個都得閒嘅時段）：比較「排咗 gym」同實際 `workouts`，睇邊種班次經常做唔到
 2. 用繁體中文（香港口語）寫一份簡短報告：
    - 過去 2–4 週嘅 gym 次數、帶氧分鐘、步數、睡眠、飲水同體重趨勢
