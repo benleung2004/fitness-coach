@@ -759,7 +759,7 @@ function recommend(ci) {
     if (short) r.push(shortByCoach ? '教練調整：預設做 30 分鐘精簡版（頭 4 個動作）' : '時間得 30 分鐘：做精簡版（頭 4 個動作）');
     return { kind: 'gym', template: tmpl, mode, icon: '🏋️', title: (isReturn ? '回歸訓練：' : '') + C.workouts[tmpl].name,
              summary: `${C.phases[ph].note} ${shiftTip}`, why: why.concat(r),
-             extra: extra.concat('chocoZAP 太和：平日上晝同下晝通常較少人，盡量避開放工 6–9 點。第一次用部機，記得先用輕重量試。'),
+             extra: extra.concat(C.gymExtras.homeCore, 'chocoZAP 太和：平日上晝同下晝通常較少人，盡量避開放工 6–9 點。第一次用部機，記得先用輕重量試。'),
              minimum: '最低版本：每個動作做 1 組，20 分鐘搞掂。' };
   };
 
@@ -836,6 +836,7 @@ function vCheckin(ci) {
   const d = UI.draft || (UI.draft = Object.assign({ shift: rs || '', energy: 'normal', sleepQ: 'ok', pain: 'none', time: 45, pref: 'any' }, ci));
   return `<div class="card">
     <h2>今日 30 秒問答</h2>
+    <button class="btn block ghost" data-act="toggleRestDay" style="margin-bottom:6px">😌 今日休息／有事，唔做運動</button>
     <div class="q"><div class="q-label">1. 今日班次${rs && d.shift === rs ? ' <span class="chip ok">已跟班表填好</span>' : ''}</div>${opts('shift', Object.fromEntries(Object.entries(C.shifts).map(([k, v]) => [k, v.name])), d.shift)}</div>
     <div class="q"><div class="q-label">2. 精神</div>${opts('energy', { low: '好攰', normal: '普通', high: '好有精神' }, d.energy)}</div>
     <div class="q"><div class="q-label">3. 尋晚瞓得點</div>${opts('sleepQ', { bad: '差', ok: '一般', good: '好' }, d.sleepQ)}</div>
@@ -855,9 +856,11 @@ function vRec(rec) {
     body = `<ul class="clean">${list.map(s => {
       const r = resolveEx(s.key, pain);
       if (!r.key) return `<li class="muted"><s>${esc(C.exercises[s.key].name)}</s>（今日略過）</li>`;
-      const sets = rec.mode === 'return' ? Math.max(1, s.sets - 1) : s.sets;
+      const sets = setsFor(s, rec.template, rec.mode);
       return `<li>${exLink(r.key, esc(C.exercises[r.key].name))} <span class="muted">${sets} × ${s.reps[0]}–${s.reps[1]}</span>${r.from ? ' <span class="chip warn">替代</span>' : ''}</li>`;
     }).join('')}</ul>
+    ${(() => { const c = gymCardio(rec.mode); const mins = gymMinutes(list.filter(s => resolveEx(s.key, pain).key).map(s => ({ key: s.key, n: setsFor(s, rec.template, rec.mode) })), c);
+      return `<p class="small">🔥 熱身 ${C.gymExtras.warmup.minutes} 分鐘 → 🏋️ 器械 → 🏃 ${esc(c.title)}</p><p class="small muted">預計大約 ${mins} 分鐘</p>`; })()}
     <button class="btn block" data-act="startGym" data-t="${rec.template}" data-mode="${rec.mode}">開始訓練</button>`;
   } else if (rec.kind === 'cardio') {
     body = `<button class="btn block" data-act="logAct" data-kind="${rec.cardioKind}" data-min="${rec.minutes}">做完，記錄 ${rec.minutes} 分鐘</button>`;
@@ -1071,6 +1074,31 @@ function vTrain() {
 }
 const workoutName = w => (C.workouts[w.type] ? C.workouts[w.type].name : { home: '屋企循環', recovery: '恢復' }[w.type] || w.type) + (w.mode === 'return' ? '（回歸）' : w.mode === 'short' ? '（精簡）' : '');
 
+// 組數：基本跟計劃；有 60 分鐘又唔攰嘅日子，複合動作加 1 組（第 1 階段最多 3 組，第 2 階段最多 4 組）
+function setsFor(s, t, mode, ci) {
+  const ph = phase();
+  let n = (ph === 1 && C.workouts[t].phase === 2) ? 2 : s.sets;
+  if (mode === 'return') return Math.max(1, n - 1);
+  ci = ci || day().checkin || {};
+  if (mode === 'normal' && ci.time >= 60 && ci.energy !== 'low' && C.exercises[s.key].type === 'compound') n = Math.min(n + 1, ph === 1 ? 3 : 4);
+  return n;
+}
+function gymCardio(mode, ci) {
+  ci = ci || day().checkin || {};
+  const G = C.gymExtras.cardio;
+  let lv = 'normal';
+  if (mode === 'return' || mode === 'short' || ci.energy === 'low' || (ci.time && ci.time <= 30)) lv = 'easy';
+  else if (ci.time >= 60) lv = 'hard';
+  const c = Object.assign({ level: lv }, G[lv]);
+  if ((ci.pain || 'none') === 'knee' && c.kind === 'walk') Object.assign(c, { kind: 'cycle', key: 'bike', text: C.gymExtras.kneeText });
+  return c;
+}
+// 大約時間：熱身 + 每組（連休息）複合 2.5 分、其他 2 分 + 帶氧 + 換機
+function gymMinutes(list, cardio) {
+  const setsMin = sum(list.map(x => x.n * (C.exercises[x.key].type === 'compound' ? 2.5 : 2)));
+  return Math.round((C.gymExtras.warmup.minutes + setsMin + (cardio ? cardio.minutes : 0) + list.length) / 5) * 5;
+}
+
 function startGym(t, mode) {
   const pain = (day().checkin || {}).pain || 'none';
   const ph = phase();
@@ -1081,8 +1109,7 @@ function startGym(t, mode) {
   list.forEach(s => {
     const r = resolveEx(s.key, pain);
     if (!r.key) return;
-    let sets = (ph === 1 && C.workouts[t].phase === 2) ? 2 : s.sets;
-    if (mode === 'return') sets = Math.max(1, sets - 1);
+    const sets = setsFor(s, t, mode);
     const prog = progression(r.key, s.reps);
     let w = prog.w;
     if (mode === 'return' && w) w = roundTo(w * 0.85, C.exercises[r.key].inc);
@@ -1090,7 +1117,8 @@ function startGym(t, mode) {
     items.push({ slot: s.key, key: r.key, subFrom: r.from || null, altUsed: false, reps: s.reps, note: '',
                  sets: Array.from({ length: sets }, () => ({ w: w ?? '', r: '', rpe: '', done: false })) });
   });
-  S.active = { id: uid(), type: t, mode, date: today(), startedAt: Date.now(), items, pain };
+  S.active = { id: uid(), type: t, mode, date: today(), startedAt: Date.now(), items, pain,
+               warm: { done: false }, cardio: Object.assign({ done: false }, gymCardio(mode)) };
   save(); UI.tab = 'train'; render(); window.scrollTo(0, 0);
 }
 
@@ -1107,6 +1135,7 @@ function vSession() {
     <button class="btn block" data-act="guidedOn">▶️ 引導模式（一個一個動作帶住做）</button>
     ${a.pain && a.pain !== 'none' ? `<p class="small" style="color:var(--warn)">${esc(C.painAdvice[a.pain])}</p>` : ''}
   </div>
+  ${warmCard(a)}
   <div class="card">${a.items.map((it, i) => {
     const ex = C.exercises[it.key];
     const prog = progression(it.key, it.reps);
@@ -1133,6 +1162,7 @@ function vSession() {
         <input class="grow" placeholder="備註（例如：座位調第 4 格）" data-note="${i}" value="${esc(it.note)}" style="margin:0;padding:8px"></div>
     </div>`;
   }).join('')}</div>
+  ${cardioCard(a)}
   <button class="btn block" data-act="finishGym">完成訓練 🎉</button>
   <div style="height:8px"></div>
   <button class="btn block danger" data-act="cancelGym">放棄今次（唔儲存）</button>`;
@@ -1140,9 +1170,25 @@ function vSession() {
 
 const curSet = it => it.sets.findIndex(x => !x.done);
 const weightGuideHtml = open => `<details ${open ? 'open' : ''}><summary>⚖️ 點樣睇／揀重量？</summary><ul class="clean small">${C.weightGuide.map(x => `<li>${esc(x)}</li>`).join('')}</ul></details>`;
+function warmCard(a) {
+  if (!a.warm) return '';
+  return `<div class="card ${a.warm.done ? '' : 'hero'}"><div class="row between"><h2>🔥 熱身 ${C.gymExtras.warmup.minutes} 分鐘</h2>${a.warm.done ? '<span class="chip ok">✓ 完成</span>' : ''}</div>
+    <p class="small">${esc(C.gymExtras.warmup.text)}</p>${exLink('bike', '單車點用')}
+    ${a.warm.done ? '' : '<button class="btn block" data-act="warmDone" style="margin-top:8px">✓ 熱身完成</button>'}</div>`;
+}
+function cardioCard(a) {
+  const c = a.cardio;
+  if (!c) return '';
+  return `<div class="card"><div class="row between"><h2>🏃 帶氧收尾：${esc(c.title)}</h2>${c.done ? '<span class="chip ok">✓ 完成</span>' : ''}</div>
+    <p class="small">${esc(c.text)}</p>${exLink(c.key, c.key === 'bike' ? '單車點用' : '跑步機點用')}
+    <p class="small muted">燃脂、練心肺都靠呢部分；做完會自動記入本週帶氧（${c.minutes} 分鐘）。</p>
+    <button class="btn block ${c.done ? 'ghost' : ''}" data-act="cardioDone" style="margin-top:8px">${c.done ? '取消' : '✓ 帶氧做完'}</button></div>`;
+}
 function vGuided() {
   const a = S.active, n = a.items.length;
   if (!n) return vSession();
+  const started = a.items.some(x => x.sets.some(y => y.done));
+  if (a.warm && !a.warm.done && !started) return `${warmCard(a)}<div class="grid2"><button class="btn ghost" data-act="warmDone">跳過熱身</button><button class="btn ghost" data-act="guidedOff">📋 睇成個清單</button></div>`;
   if (UI.gi == null || UI.gi >= n) { const k = a.items.findIndex(x => curSet(x) >= 0); UI.gi = k < 0 ? n - 1 : k; }
   const i = UI.gi, it = a.items[i], ex = C.exercises[it.key], j = curSet(it), s = j >= 0 ? it.sets[j] : null;
   const total = sum(a.items.map(x => x.sets.length)), done = sum(a.items.map(x => x.sets.filter(y => y.done).length));
@@ -1175,7 +1221,7 @@ function vGuided() {
     : `<div class="gset">呢個動作完成 ✅</div>${nextIt ? `<button class="btn block xl" data-act="gGo" data-i="${a.items.indexOf(nextIt)}">下一個：${esc(C.exercises[nextIt.key].name)} →</button>` : ''}`}
     <div class="grid2" style="margin-top:12px"><button class="btn ghost" data-act="gGo" data-i="${i - 1}" ${i === 0 ? 'disabled' : ''}>← 上一個</button><button class="btn ghost" data-act="gGo" data-i="${i + 1}" ${i === n - 1 ? 'disabled' : ''}>下一個 →</button></div>
   </div>
-  ${allDone ? '<div class="card hero"><div class="big">全部完成 🎉</div><p>做得好！記得伸展 5 分鐘。</p><button class="btn block" data-act="finishGym">儲存訓練</button></div>' : ''}
+  ${allDone ? `${cardioCard(a)}<div class="card hero"><div class="big">器械全部完成 🎉</div><p>${a.cardio && !a.cardio.done ? '做埋上面嘅帶氧收尾，再' : ''}伸展 5 分鐘就完成。</p><button class="btn block" data-act="finishGym">儲存訓練</button></div>` : ''}
   <div class="grid2"><button class="btn ghost" data-act="guidedOff">📋 睇成個清單</button><button class="btn ghost" data-act="finishGym">提早完成</button></div>`;
 }
 // 引導模式時保持螢幕唔熄（iOS 16.4+ 支援；唔支援就算）
@@ -1195,6 +1241,7 @@ function finishGym() {
   S.workouts.push({ id: a.id, at: Date.now(), date: a.date, type: a.type, mode: a.mode, minutes, pain: a.pain,
     exercises: a.items.map(it => ({ key: it.key, slot: it.slot, subFrom: it.subFrom, altUsed: it.altUsed, note: it.note,
       sets: it.sets.map(s => ({ w: num(s.w), r: num(s.r), rpe: num(s.rpe), done: s.done })) })) });
+  if (a.cardio && a.cardio.done) S.activities.push({ id: uid(), at: Date.now(), date: a.date, kind: a.cardio.kind, minutes: a.cardio.minutes, intensity: a.cardio.intensity, note: 'gym 後帶氧：' + a.cardio.title });
   const A = adj();
   a.items.forEach(it => { if (A.deload[it.key] && it.sets.some(s => s.done)) delete A.deload[it.key]; });
   S.active = null;
@@ -1790,6 +1837,8 @@ const actions = {
   async delPhoto(el) { if (confirm('刪除呢張相？')) { await photoTx('readwrite', st => st.delete(el.dataset.id)); fillPhotos(); } },
   openSettings() { settingsModal(); },
   watchHelp() { watchHelp(); },
+  warmDone() { if (S.active && S.active.warm) { S.active.warm.done = true; persist(); render(); window.scrollTo(0, 0); } },
+  cardioDone() { if (S.active && S.active.cardio) { S.active.cardio.done = !S.active.cardio.done; persist(); render(); if (S.active.cardio.done) toast('帶氧完成 🔥 記得伸展'); } },
   async pasteHealth() {
     let text = '';
     try { text = await Promise.race([navigator.clipboard.readText(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))]); } catch (e) { text = ''; }
@@ -1803,6 +1852,7 @@ const actions = {
   toggleRestDay(el) {
     const d = el.dataset.d || today(), x = day(d);
     x.restDay = !x.restDay; x.restUpd = Date.now();
+    if (d === today()) { UI.editCheckin = false; UI.draft = null; }
     save(); render(); toast(x.restDay ? `${d === today() ? '今日' : shortDate(d)}唔做運動 😌 行路照計` : '已取消');
   },
   toggleNoGym() { S.profile.noGym = !S.profile.noGym; S.profile.upd = Date.now(); save(); render(); toast(S.profile.noGym ? '已改：gym 日暫時做屋企徒手肌力' : '已改返：gym 日去 gym 💪'); },

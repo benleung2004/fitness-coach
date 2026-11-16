@@ -4,7 +4,7 @@
 // 改完記得將 sw.js 入面嘅 CACHE_VERSION 加 1，手機先會攞到新版。
 // =============================================================
 window.CONFIG = {
-  version: '1.5.0',
+  version: '1.6.0',
 
   // ---------- 每週 / 每日目標 ----------
   targets: {
@@ -71,7 +71,10 @@ window.CONFIG = {
     crunch:     { name: '捲腹 Crunch', type: 'core', unit: 'bw', inc: 2, rest: '60 秒',
                   cue: '下背貼地，用腹肌將膊頭捲離地面；唔好用手拉頸。',
                   sub: '死蟲式 Dead Bug', avoid: ['back'], painSub: { back: 'deadBug' } },
-    backExt:    { name: '背伸展 Back Extension', type: 'isolation', unit: 'bw', inc: 2, rest: '60–90 秒',
+    abMachine:  { name: '腹背機捲腹 Ab Crunch Machine', type: 'core', unit: 'kg', inc: 2.5, rest: '60 秒',
+                  cue: '坐好，手臂掛住上面嘅墊；呼氣用腹肌將上身向前捲落去，唔好用手拉；慢慢返原位。',
+                  sub: '鋼索滑輪機跪地捲腹（繩索）', avoid: ['back'], painSub: { back: 'deadBug' } },
+    backExt:    { name: '背伸展 Back Extension', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
                   cue: '下背舒服先做；上到身體一直線就停，唔好過度向後拗。',
                   sub: '鳥狗式 Bird-dog／臀橋', avoid: ['back'], painSub: { back: 'birdDog' } },
     dbBench:    { name: '啞鈴臥推 Dumbbell Bench Press', type: 'compound', unit: 'kg', inc: 1, rest: '90–120 秒',
@@ -108,14 +111,14 @@ window.CONFIG = {
       { key: 'chestPress', sets: 2, reps: [10, 12] },
       { key: 'latPulldown', sets: 2, reps: [10, 12] },
       { key: 'latRaise', sets: 2, reps: [12, 15] },
-      { key: 'plank', sets: 2, reps: [20, 40] } ] },
+      { key: 'abMachine', sets: 2, reps: [12, 15] } ] },
     gymB: { name: 'Gym B 日（全身）', phase: 1, exercises: [
       { key: 'legExt', sets: 2, reps: [10, 12] },
       { key: 'legCurl', sets: 2, reps: [10, 12] },
       { key: 'row', sets: 2, reps: [10, 12] },
       { key: 'shoulderPress', sets: 2, reps: [10, 12] },
       { key: 'chestFly', sets: 2, reps: [12, 15] },
-      { key: 'crunch', sets: 2, reps: [12, 20] } ] },
+      { key: 'backExt', sets: 2, reps: [12, 15] } ] },
     d1: { name: '全身 Day 1', phase: 2, exercises: [
       { key: 'backExt', sets: 3, reps: [10, 14] },
       { key: 'row', sets: 3, reps: [10, 12] },
@@ -138,7 +141,7 @@ window.CONFIG = {
       { key: 'legCurl', sets: 3, reps: [10, 12] },
       { key: 'chestFly', sets: 3, reps: [12, 15] },
       { key: 'ohTriceps', sets: 2, reps: [12, 15] },
-      { key: 'crunch', sets: 3, reps: [12, 20] } ] }
+      { key: 'abMachine', sets: 3, reps: [12, 15] } ] }
   },
 
   phases: {
@@ -195,6 +198,21 @@ window.CONFIG = {
     Day: { name: 'Day', start: '09:00', end: '18:00' },
     off: { name: '休',  start: null,    end: null }
   },
+  // gym 日：熱身 + 重量訓練 + 帶氧收尾（燃脂、心肺）；平板支撐／捲腹留返屋企做
+  gymExtras: {
+    warmup: { minutes: 6, text: '單車或者太空漫步機輕鬆踩 5 分鐘（微微出汗）→ 第一部機用好輕重量做 1 組 × 12 先。' },
+    cardio: {
+      hard:   { minutes: 15, kind: 'walk', intensity: 'vigorous', title: '間歇帶氧 15 分鐘（中高強度）', key: 'treadmill',
+                text: '斜坡跑步機：坡度 8%、時速 5 行 2 分鐘 → 坡度 12–15% 行 1 分鐘，重複 4 次；或者單車 30 秒快踩 + 90 秒慢踩 × 6。最後 2 分鐘放慢。' },
+      normal: { minutes: 15, kind: 'walk', intensity: 'moderate', title: '斜坡行 15 分鐘', key: 'treadmill',
+                text: '斜坡跑步機坡度 8–10%、時速 4.5–5.5，微喘仲講到嘢。' },
+      easy:   { minutes: 8, kind: 'cycle', intensity: 'light', title: '輕鬆踩 8 分鐘', key: 'bike',
+                text: '單車或者臥式單車輕鬆踩，當收操。' }
+    },
+    kneeText: '膝頭唔舒服：唔好行斜坡，改用臥式單車或者太空漫步機，時間一樣。',
+    homeCore: '返屋企做 5 分鐘核心：平板支撐 30 秒 × 2、捲腹 15 下 × 2（gym 冇位瞓地，留返屋企做）。'
+  },
+
   // 點樣揀／睇重量（第一次做、圖鑑、引導模式都會顯示）
   weightGuide: [
     '機上面嘅重量：望住旁邊嗰疊鐵片，每塊印住數字。將插銷插入邊一塊，數字就係重量，App 記低呢個數字就得。',

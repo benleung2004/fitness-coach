@@ -46,10 +46,14 @@ window.LIBRARY = {
     dbRow: { zh: '單手啞鈴划船', en: 'One-Arm Dumbbell Row', group: 'back', img: 'photo', muscles: '中背、背闊肌',
       steps: ['一隻手同膝頭撐喺平凳，背保持平直。', '另一隻手揸啞鈴，手臂垂直向下。', '手肘向上向後拉，啞鈴拉到腰側。', '慢慢放返落。'],
       mistakes: ['轉身借力。', '彎腰駝背。'] },
-    backExt: { zh: '背伸展', en: 'Back Extension / Hyperextension', group: 'back', img: 'photo', muscles: '下背、臀部、大腿後',
-      find: '一張斜嘅凳，腳踭勾住、大腿前面頂住墊。',
-      steps: ['調較墊位喺盆骨下面，腳踭勾好。', '雙手交叉放胸前，身體成一直線。', '慢慢向前彎落去。', '用臀同下背發力起返身，上到成一直線就停。'],
-      mistakes: ['上到盡過度向後拗腰。', '腰痛照做（應該改做鳥狗式）。'] },
+    backExt: { zh: '背伸展', en: 'Back Extension', group: 'back', img: 'photo', muscles: '下背、臀部、大腿後',
+      find: 'chocoZAP：用「腹背機」（紅色座位嗰部）嘅背部模式：坐低，上背頂住後面嘅墊。（示範相係另一款背伸展凳，用嘅肌肉一樣。）',
+      steps: ['調較成背部模式，揀輕重量，坐好，腳踩實踏板。', '雙手交叉放胸前，上背頂住墊。', '用下背同臀發力慢慢向後推，推到身體坐直少少就停。', '慢慢返原位。'],
+      mistakes: ['向後推得太盡、拗腰。', '腰痛照做（應該改做鳥狗式）。'] },
+    abMachine: { zh: '腹背機捲腹', en: 'Ab Crunch Machine', group: 'core', img: 'photo', muscles: '腹部',
+      find: 'chocoZAP：「腹背機」（紅色座位嗰部）嘅腹部模式。坐低，手臂掛喺上面嘅墊，或者揸住頭頂手柄。',
+      steps: ['調較成腹部模式，揀輕重量，坐好，腳勾住下面嘅墊。', '手臂掛住上面嘅墊（或者揸住手柄）。', '呼氣，用腹肌將上身向前捲落去。', '慢慢返原位，唔好彈返上去。'],
+      mistakes: ['用手臂拉。', '太重，用甩嘅。'] },
 
     // ---------- 胸 ----------
     chestPress: { zh: '器械胸推', en: 'Machine Chest Press', group: 'chest', img: 'photo', muscles: '胸、膊頭前、三頭肌',

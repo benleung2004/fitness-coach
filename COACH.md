@@ -38,6 +38,7 @@ gh api repos/benleung2004/fitness-data/contents/data/fitness.json -H "Accept: ap
 - 用戶嘅 gym：chocoZAP 太和（有鋼索滑輪機、可調凳、啞鈴；冇下拉專用機同坐姿划船機，所以 row／latPulldown 用鋼索做）。「點揀重量」教學 → `js/config.js` 嘅 `weightGuide`
 - 動作教學（中文步驟、常見錯誤、示範圖）→ `js/library.js`；新動作要加相就由 free-exercise-db 下載、縮到 480px 闊放入 `img/ex/<key>-0.jpg`／`-1.jpg`，再加入 `sw.js` 預先快取清單
 - 推薦邏輯 → `js/app.js` 嘅 `recommend()`
+- gym 日熱身、帶氧收尾（燃脂）、屋企核心提示 → `js/config.js` 嘅 `gymExtras`；組數按時間／精神加減 → `setsFor()`；帶氧強度揀法 → `gymCardio()`。gym 只做器械，平板支撐／捲腹留返屋企
 - 班表排程（邊日 gym、通勤、恢復）→ `js/app.js` 嘅 `planDays()`、`gymScore()`、`commuteFeasible()`；預設上落班時間 → `js/config.js` 嘅 `shiftDefaults`
 - 女朋友一齊郁（佢嘅班次時間、得閒時段計法、活動建議）→ `js/config.js` 嘅 `gfShifts`、`together`；邏輯 → `togetherWindow()`
 - 通勤（行／踩分鐘、地圖起點）→ `js/config.js` 嘅 `commute`；判斷邏輯 → `commuteAdvice()`
