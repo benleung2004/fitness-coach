@@ -32,7 +32,7 @@ const PAIN = { none: '冇', knee: '膝頭', back: '腰背', shoulder: '膊頭', 
 function blank() {
   return { profile: { onboarded: false, nickname: '', heightCm: '', startDate: today(), gfMode: false, phaseOverride: 'auto' },
            days: {}, workouts: [], activities: [], body: [], achieved: {}, active: null, reviewSeen: '', noteForClaude: '', noteUpd: 0,
-           weather: null, deleted: {}, lastBackup: '', roster: {}, gfRoster: {}, shiftTimes: null };
+           weather: null, deleted: {}, lastBackup: '', roster: {}, gfRoster: {}, shiftTimes: null, meals: [] };
 }
 let S;
 try { S = Object.assign(blank(), JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { S = blank(); }
@@ -42,7 +42,7 @@ function save() { persist(); scheduleSync(); }
 // ---------- 合併（同步同匯入共用）：唔會覆蓋，以較新嗰份為準 ----------
 function mergeData(R) {
   if (!R || typeof R !== 'object') return false;
-  const before = JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.gfRoster, S.shiftTimes]);
+  const before = JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.gfRoster, S.shiftTimes, S.meals]);
   const dead = Object.assign({}, R.deleted || {}, S.deleted || {});
   S.deleted = dead;
   const stamp = x => x.upd || x.at || 0;
@@ -54,6 +54,7 @@ function mergeData(R) {
   S.workouts = byId(S.workouts, R.workouts);
   S.activities = byId(S.activities, R.activities);
   S.body = byId(S.body, R.body);
+  S.meals = byId(S.meals, R.meals);
   Object.entries(R.days || {}).forEach(([d, r]) => {
     const l = S.days[d];
     if (!l) { S.days[d] = r; return; }
@@ -84,7 +85,7 @@ function mergeData(R) {
     Object.entries(R[key] || {}).forEach(([d, r]) => { const l = S[key][d]; if (r && (!l || (r.upd || 0) > (l.upd || 0))) S[key][d] = r; });
   });
   if (R.shiftTimes && R.shiftTimes.t && (R.shiftTimes.upd || 0) > ((S.shiftTimes || {}).upd || 0)) S.shiftTimes = { t: R.shiftTimes.t, upd: R.shiftTimes.upd };
-  return before !== JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.gfRoster, S.shiftTimes]);
+  return before !== JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.gfRoster, S.shiftTimes, S.meals]);
 }
 
 // ---------- GitHub 私人 repo 同步（token 只存喺呢部機，唔會匯出） ----------
@@ -136,6 +137,7 @@ async function syncNow(manual) {
     }
     if (!ok) throw new Error('多部機同時同步，稍後再試');
     SY.lastSync = Date.now(); SY.lastError = ''; saveSY();
+    uploadMeals();
     if (manual) toast('☁️ 同步完成');
   } catch (e) {
     SY.lastError = e.message === 'auth' ? 'Token 無效、過期，或者冇呢個 repo 嘅權限' : (e.message === 'Failed to fetch' ? '連唔到 GitHub' : e.message);
@@ -809,6 +811,7 @@ function render() {
   $('#app').innerHTML = views[UI.tab]();
   if (UI.tab === 'progress') fillPhotos();
   if (UI.tab === 'library') filterLibrary();
+  if (UI.tab === 'food') fillMeals();
 }
 
 const opts = (name, map, cur) => `<div class="opts">${Object.entries(map).map(([k, v]) =>
@@ -1431,18 +1434,63 @@ async function photoTx(mode, fn) {
     tx.oncomplete = () => res(out && out.result); tx.onerror = () => rej(tx.error);
   });
 }
-async function shrink(file) {
+async function shrink(file, max = 1080, q = 0.85) {
   const img = await createImageBitmap(file);
-  const scale = Math.min(1, 1080 / Math.max(img.width, img.height));
+  const scale = Math.min(1, max / Math.max(img.width, img.height));
   const c = document.createElement('canvas'); c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
   c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-  return new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+  return new Promise(r => c.toBlob(r, 'image/jpeg', q));
+}
+
+// ---------- 食物相：上載去私人 repo 嘅 meals/，等 Claude「睇最新 log」時分析 ----------
+const MEAL_SLOTS = { breakfast: '🌅 早餐', lunch: '☀️ 午餐', dinner: '🌙 晚餐', snack: '🍪 小食／宵夜' };
+const mealSlotNow = () => { const h = new Date().getHours(); return h < 11 ? 'breakfast' : h < 16 ? 'lunch' : h < 21 ? 'dinner' : 'snack'; };
+const blobB64 = b => new Promise((res, rej) => { const f = new FileReader(); f.onload = () => res(String(f.result).split(',')[1]); f.onerror = () => rej(f.error); f.readAsDataURL(b); });
+const mealPath = m => `meals/${m.date}/${m.id}.jpg`;
+const ghContents = (path, opts = {}) => fetch(`https://api.github.com/repos/${SY.repo}/contents/${path}`, Object.assign({ cache: 'no-store' }, opts, {
+  headers: { Authorization: `Bearer ${SY.token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' } }));
+let mealUploading = false;
+async function uploadMeals() {
+  if (!syncReady() || !navigator.onLine || mealUploading) return;
+  const todo = (S.meals || []).filter(m => !m.up && !(S.deleted || {})[m.id]);
+  if (!todo.length) return;
+  mealUploading = true;
+  try {
+    for (const m of todo) {
+      const rec = await photoTx('readonly', st => st.get(m.id));
+      if (!rec || !rec.blob) continue;   // 相喺另一部機，由嗰部機上載
+      const r = await ghContents(mealPath(m), { method: 'PUT', body: JSON.stringify({ message: `meal ${m.date} ${MEAL_SLOTS[m.slot] || ''}`, content: await blobB64(rec.blob) }) });
+      if (r.ok || r.status === 422) { m.up = true; m.upd = Date.now(); m.path = mealPath(m); }
+      else if (r.status === 401 || r.status === 403) break;
+    }
+  } catch (e) { /* 冇網：下次再試 */ }
+  mealUploading = false;
+  save(); if (UI.tab === 'food') render();
+}
+async function deleteRemoteMeal(m) {
+  try {
+    const r = await ghContents(mealPath(m));
+    if (!r.ok) return;
+    const { sha } = await r.json();
+    await ghContents(mealPath(m), { method: 'DELETE', body: JSON.stringify({ message: `delete meal ${m.date}`, sha }) });
+  } catch (e) {}
+}
+let mealUrls = [];
+async function fillMeals() {
+  const imgs = document.querySelectorAll('img[data-meal]');
+  mealUrls.forEach(u => URL.revokeObjectURL(u)); mealUrls = [];
+  for (const el of imgs) {
+    try {
+      const rec = await photoTx('readonly', st => st.get(el.dataset.meal));
+      if (rec && rec.blob) { const u = URL.createObjectURL(rec.blob); mealUrls.push(u); el.src = u; } else el.replaceWith(Object.assign(document.createElement('div'), { className: 'mealph', textContent: '🖼️' }));
+    } catch (e) {}
+  }
 }
 let photoUrls = [];
 async function fillPhotos() {
   const box = $('#photoBox'); if (!box) return;
   try {
-    const all = (await photoTx('readonly', st => st.getAll())) || [];
+    const all = ((await photoTx('readonly', st => st.getAll())) || []).filter(p => p.kind !== 'meal');
     photoUrls.forEach(u => URL.revokeObjectURL(u)); photoUrls = [];
     if (!all.length) { box.innerHTML = '<p class="muted small">未有相片。</p>'; return; }
     const byDate = {};
@@ -1542,7 +1590,20 @@ function vFood() {
   const x = day();
   const tgt = waterTarget();
   const N = C.nutrition;
-  return `<div class="card hero">
+  const meals = (S.meals || []).filter(m => m.date === today() && !(S.deleted || {})[m.id]).sort((a, b) => a.at - b.at);
+  const status = m => m.up ? '☁️ 已上載，Claude 睇得到' : syncReady() ? '⏳ 等上載（有網會自動上）' : '📱 只喺呢部機（開咗同步先會上載）';
+  return `<div class="card">
+    <div class="row between"><h2>📸 食物相</h2><span class="small muted">每餐影一張</span></div>
+    <p class="small muted">影相就得，唔使自己計。你同 Claude 講「睇最新 log 幫我調整」，Claude 會睇晒啲相，估蛋白質同建議點改。相只會上載去你嘅私人 repo。</p>
+    ${opts('mealSlot', MEAL_SLOTS, UI.mealSlot || mealSlotNow())}
+    <input id="mealNote" placeholder="（可選）寫低食咩，例如：雞扒飯、走甜奶茶" style="margin:8px 0">
+    <label class="btn block">📸 影相／揀相<input type="file" accept="image/*" id="mealFile" class="hidden"></label>
+    ${meals.length ? meals.map(m => `<div class="list-item" style="align-items:center"><img class="mealph" data-meal="${m.id}" alt="">
+      <div class="grow"><b>${esc(MEAL_SLOTS[m.slot] || '')}</b>${m.note ? ` <span class="small">${esc(m.note)}</span>` : ''}<div class="small muted">${status(m)}</div></div>
+      <button class="btn sm ghost" data-act="delMeal" data-id="${m.id}">刪除</button></div>`).join('') : '<p class="small muted" style="margin-top:8px">今日未有食物相。</p>'}
+    ${syncReady() ? '' : '<p class="small" style="color:var(--warn)">要喺 ⚙︎ 設定開「多裝置同步」，相先會上載俾 Claude 睇。</p>'}
+  </div>
+  <div class="card hero">
     <h2>💧 今日飲水</h2>
     <div class="big">${r1(x.waterMl / 1000)} / ${tgt / 1000} L</div>
     <div class="bar"><i style="width:${Math.min(100, 100 * x.waterMl / tgt)}%"></i></div>
@@ -1608,6 +1669,7 @@ function exportData() {
     adjustments: adj(), adjustLog: S.adjustLog || [], dismissedInsights: S.insightSeen || {},
     weeklySummaries: weeklySummaries(12),
     roster: S.roster || {}, gfRoster: S.gfRoster || {}, shiftTimes: S.shiftTimes || null, shiftTimesEffective: shiftTimes(), plan7: planDays(today(), 7).map(p => ({ date: p.date, shift: p.shift, gfShift: gfShift(p.date), kind: p.kind, text: planText(p), together: togetherText(p.date) })),
+    meals: S.meals || [],
     profile: S.profile, body: S.body, workouts: S.workouts, activities: S.activities, days: S.days, achieved: S.achieved
   };
 }
@@ -1707,7 +1769,7 @@ function addActivity(a) {
 
 // ---------- 事件 ----------
 const actions = {
-  pick(el) { UI.draft[el.dataset.name] = el.dataset.name === 'time' ? Number(el.dataset.v) : el.dataset.v; render(); },
+  pick(el) { if (el.dataset.name === 'mealSlot') { UI.mealSlot = el.dataset.v; render(); return; } UI.draft[el.dataset.name] = el.dataset.name === 'time' ? Number(el.dataset.v) : el.dataset.v; render(); },
   submitCheckin() {
     if (!UI.draft.shift) { toast('先揀今日班次'); return; }
     day().checkin = Object.assign({}, UI.draft, { at: Date.now() }); UI.draft = null; UI.editCheckin = false; save(); render(); window.scrollTo(0, 0);
@@ -1837,6 +1899,14 @@ const actions = {
   async delPhoto(el) { if (confirm('刪除呢張相？')) { await photoTx('readwrite', st => st.delete(el.dataset.id)); fillPhotos(); } },
   openSettings() { settingsModal(); },
   watchHelp() { watchHelp(); },
+  async delMeal(el) {
+    const m = (S.meals || []).find(x => x.id === el.dataset.id);
+    if (!m || !confirm('刪除呢張食物相？')) return;
+    S.deleted[m.id] = Date.now(); S.meals = S.meals.filter(x => x.id !== m.id);
+    try { await photoTx('readwrite', st => st.delete(m.id)); } catch (e) {}
+    save(); render();
+    if (m.up && syncReady()) deleteRemoteMeal(m);
+  },
   warmDone() { if (S.active && S.active.warm) { S.active.warm.done = true; persist(); render(); window.scrollTo(0, 0); } },
   cardioDone() { if (S.active && S.active.cardio) { S.active.cardio.done = !S.active.cardio.done; persist(); render(); if (S.active.cardio.done) toast('帶氧完成 🔥 記得伸展'); } },
   async pasteHealth() {
@@ -1927,6 +1997,19 @@ document.addEventListener('change', async e => {
       const blob = await shrink(t.files[0]);
       await photoTx('readwrite', st => st.put({ id: uid(), date: today(), angle: $('#pAngle').value, blob }));
       toast('相片已存（只喺呢部機）'); fillPhotos();
+    } catch (err) { toast('存唔到相片'); }
+    t.value = '';
+    return;
+  }
+  if (t.id === 'mealFile' && t.files[0]) {
+    try {
+      const blob = await shrink(t.files[0], 900, 0.75);
+      const m = { id: uid(), date: today(), at: Date.now(), slot: UI.mealSlot || mealSlotNow(), note: ($('#mealNote') || {}).value ? $('#mealNote').value.trim().slice(0, 80) : '', up: false, upd: Date.now() };
+      await photoTx('readwrite', st => st.put({ id: m.id, kind: 'meal', date: m.date, blob }));
+      (S.meals = S.meals || []).push(m);
+      UI.mealSlot = null; save(); render();
+      toast(syncReady() ? '📸 已記錄，上載緊…' : '📸 已記錄（只喺呢部機）');
+      uploadMeals();
     } catch (err) { toast('存唔到相片'); }
     t.value = '';
     return;

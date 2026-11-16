@@ -11,6 +11,18 @@ gh api repos/benleung2004/fitness-data/contents/data/fitness.json -H "Accept: ap
 
 如果失敗（例如未開同步），就叫用戶用手機「匯出俾 Claude」再放入 `logs/`。**唔好改 `fitness-data` 入面嘅資料**，嗰度只係俾手機寫。
 
+### 食物相
+JSON 嘅 `meals`（`id`、`date`、`slot` 早／午／晚／小食、`note`、`up` 有冇上載、`path`）。相喺私人 repo 嘅 `meals/<日期>/<id>.jpg`。下載最近 7 日嘅相落 `logs/meals/`（**唔好上載、唔好 commit**）：
+
+```bash
+for d in $(seq 0 6 | xargs -I{} date -v-{}d +%F); do
+  gh api "repos/benleung2004/fitness-data/contents/meals/$d" --jq '.[].path' 2>/dev/null | while read p; do
+    mkdir -p "logs/$(dirname "$p")"; gh api "repos/benleung2004/fitness-data/contents/$p" -H "Accept: application/vnd.github.raw" > "logs/$p"; done
+done
+```
+
+逐張睇相（Read 工具），每餐估：蛋白質（g）、大約熱量、有冇菜、甜飲。報告用表格：日期／餐／估計蛋白質／建議。目標每日蛋白質大約 1.6 g × 體重 kg。估算只係大概，要講明。
+
 ## Claude 要做嘅嘢
 1. 讀 `logs/` 入面**最新**嗰個 JSON（如果有舊 log，同上一個比較趨勢）。次序：
    - `noteForClaude`：用戶想改咩（可能係空，空都要主動分析）

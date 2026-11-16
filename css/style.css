@@ -196,3 +196,4 @@ a.btn { text-decoration: none; }
 .seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; flex: 1; }
 .seg-b { min-height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--card2); color: var(--text); font-size: 15px; font-family: inherit; }
 .seg-b.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+.mealph { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; background: var(--card2); flex: none; display: flex; align-items: center; justify-content: center; }
