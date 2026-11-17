@@ -1560,7 +1560,7 @@ const ghContents = (path, opts = {}) => fetch(`https://api.github.com/repos/${SY
 let mealUploading = false;
 async function uploadMeals() {
   if (!syncReady() || !navigator.onLine || mealUploading) return;
-  const todo = (S.meals || []).filter(m => !m.up && !(S.deleted || {})[m.id]);
+  const todo = (S.meals || []).filter(m => !m.up && !m.text && !(S.deleted || {})[m.id]);
   if (!todo.length) return;
   mealUploading = true;
   try {
@@ -1700,14 +1700,17 @@ function vFood() {
   const tgt = waterTarget();
   const N = C.nutrition;
   const meals = (S.meals || []).filter(m => m.date === today() && !(S.deleted || {})[m.id]).sort((a, b) => a.at - b.at);
-  const status = m => m.up ? '☁️ 已上載，Claude 睇得到' : syncReady() ? '⏳ 等上載（有網會自動上）' : '📱 只喺呢部機（開咗同步先會上載）';
+  const synced = m => syncReady() && SY.lastSync && SY.lastSync >= m.at && !SY.lastError;
+  const status = m => m.text ? (synced(m) ? '☁️ 已同步，Claude 收到' : syncReady() ? '⏳ 同步緊…（有網會自動上）' : '📱 只喺呢部機（開咗同步先會上載）')
+    : m.up ? '☁️ 已上載，Claude 睇得到' : syncReady() ? '⏳ 等上載（有網會自動上）' : '📱 只喺呢部機（開咗同步先會上載）';
   return `${C.nutritionGoal ? `<div class="card"><h2>🎯 飲食目標</h2><p class="small">${esc(C.nutritionGoal)}</p></div>` : ''}<div class="card">
     <div class="row between"><h2>📸 食物相</h2><span class="small muted">每餐影一張</span></div>
     <p class="small muted">影相就得，唔使自己計。你同 Claude 講「睇最新 log 幫我調整」，Claude 會睇晒啲相，估蛋白質同建議點改。相只會上載去你嘅私人 repo。</p>
     ${opts('mealSlot', MEAL_SLOTS, UI.mealSlot || mealSlotNow())}
-    <input id="mealNote" placeholder="（可選）寫低食咩，例如：雞扒飯、走甜奶茶" style="margin:8px 0">
-    <label class="btn block">📸 影相／揀相<input type="file" accept="image/*" id="mealFile" class="hidden"></label>
-    ${meals.length ? meals.map(m => `<div class="list-item" style="align-items:center"><img class="mealph" data-meal="${m.id}" alt="">
+    <input id="mealNote" placeholder="寫低食咩，例如：雞扒飯、走甜奶茶" value="${esc(UI.mealDraft || '')}" style="margin:8px 0">
+    <div class="grid2"><button class="btn" data-act="saveMealText">✅ 確認記錄（冇相都得）</button><label class="btn">📸 影相／揀相<input type="file" accept="image/*" id="mealFile" class="hidden"></label></div>
+    <p class="small muted" style="margin:6px 0 0">撳「確認記錄」或者影相先會儲存；下面見到「☁️」就代表 Claude 收到。</p>
+    ${meals.length ? meals.map(m => `<div class="list-item" style="align-items:center">${m.text ? '<div class="mealph">📝</div>' : `<img class="mealph" data-meal="${m.id}" alt="">`}
       <div class="grow"><b>${esc(MEAL_SLOTS[m.slot] || '')}</b>${m.note ? ` <span class="small">${esc(m.note)}</span>` : ''}<div class="small muted">${status(m)}</div></div>
       <button class="btn sm ghost" data-act="delMeal" data-id="${m.id}">刪除</button></div>`).join('') : '<p class="small muted" style="margin-top:8px">今日未有食物相。</p>'}
     ${syncReady() ? '' : '<p class="small" style="color:var(--warn)">要喺 ⚙︎ 設定開「多裝置同步」，相先會上載俾 Claude 睇。</p>'}
@@ -1811,6 +1814,8 @@ function summaryText() {
   if (al.length) lines.push('## 已套用嘅自動調整', ...al.map(a => '- ' + a.text), '');
   lines.push('## 每週', '| 週一 | gym | 帶氧分 | 步數 | 瞓 | 水L | 體重 | 完成度 |', '|---|---|---|---|---|---|---|---|');
   w.forEach(x => lines.push(`| ${x.weekStart} | ${x.gym} | ${x.cardio} | ${x.avgSteps ?? '-'} | ${x.avgSleep ?? '-'} | ${x.avgWaterL ?? '-'} | ${x.avgWeight ?? '-'} | ${x.adherence}% |`));
+  const ml = (S.meals || []).filter(m => m.date >= addDays(today(), -2) && m.note && !(S.deleted || {})[m.id]).sort((a, b) => a.at - b.at);
+  if (ml.length) { lines.push('', '## 最近 3 日食咗咩'); ml.forEach(m => lines.push(`- ${m.date} ${MEAL_SLOTS[m.slot] || ''}：${m.note}${m.text ? '' : '（有相）'}`)); }
   lines.push('', '## 最近訓練');
   recent.forEach(r => {
     lines.push(`- ${r.date} ${workoutName(r)}${r.minutes ? ` ${r.minutes}分鐘` : ''}${r.pain && r.pain !== 'none' ? ` 痛:${PAIN[r.pain]}` : ''}`);
@@ -2029,9 +2034,21 @@ const actions = {
   async delPhoto(el) { if (confirm('刪除呢張相？')) { await photoTx('readwrite', st => st.delete(el.dataset.id)); fillPhotos(); } },
   openSettings() { settingsModal(); },
   watchHelp() { watchHelp(); },
+  async saveMealText() {
+    const note = ($('#mealNote').value || '').trim().slice(0, 200);
+    if (!note) { toast('先寫低食咗咩'); return; }
+    const m = { id: uid(), date: today(), at: Date.now(), slot: UI.mealSlot || mealSlotNow(), note, text: true, up: false, upd: Date.now() };
+    (S.meals = S.meals || []).push(m);
+    UI.mealDraft = ''; UI.mealSlot = null; save(); render();
+    if (!syncReady()) { toast('✅ 已記錄（只喺呢部機，開同步先會俾 Claude）'); return; }
+    toast('✅ 已記錄，同步緊…');
+    await syncNow(false);
+    if (UI.tab === 'food') render();
+    toast(SY.lastError ? '⚠️ 同步失敗：' + SY.lastError + '（有網會再試）' : '☁️ 已同步，Claude 收到');
+  },
   async delMeal(el) {
     const m = (S.meals || []).find(x => x.id === el.dataset.id);
-    if (!m || !confirm('刪除呢張食物相？')) return;
+    if (!m || !confirm(m.text ? '刪除呢個紀錄？' : '刪除呢張食物相？')) return;
     S.deleted[m.id] = Date.now(); S.meals = S.meals.filter(x => x.id !== m.id);
     try { await photoTx('readwrite', st => st.delete(m.id)); } catch (e) {}
     save(); render();
@@ -2142,7 +2159,8 @@ document.addEventListener('change', async e => {
   if (t.id === 'mealFile' && t.files[0]) {
     try {
       const blob = await shrink(t.files[0], 900, 0.75);
-      const m = { id: uid(), date: today(), at: Date.now(), slot: UI.mealSlot || mealSlotNow(), note: ($('#mealNote') || {}).value ? $('#mealNote').value.trim().slice(0, 80) : '', up: false, upd: Date.now() };
+      const m = { id: uid(), date: today(), at: Date.now(), slot: UI.mealSlot || mealSlotNow(), note: ($('#mealNote') || {}).value ? $('#mealNote').value.trim().slice(0, 200) : '', up: false, upd: Date.now() };
+      UI.mealDraft = '';
       await photoTx('readwrite', st => st.put({ id: m.id, kind: 'meal', date: m.date, blob }));
       (S.meals = S.meals || []).push(m);
       UI.mealSlot = null; save(); render();
@@ -2168,6 +2186,7 @@ document.addEventListener('input', e => {
   if (t.dataset.set) setField(t, true);
   if (t.id === 'libSearch') { UI.libQ = t.value; filterLibrary(); }
   if (t.dataset.note != null && S.active) { S.active.items[t.dataset.note].note = t.value; persist(); }
+  if (t.id === 'mealNote') UI.mealDraft = t.value;
   if (t.id === 'sNote') { setNote(t.value); persist(); const st = $('#sNoteState'); if (st) st.textContent = '✅ 已自動儲存'; }
 });
 function setField(t) {
