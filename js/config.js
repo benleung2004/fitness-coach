@@ -4,7 +4,7 @@
 // 改完記得將 sw.js 入面嘅 CACHE_VERSION 加 1，手機先會攞到新版。
 // =============================================================
 window.CONFIG = {
-  version: '1.9.1',
+  version: '1.9.2',
 
   // ---------- 每週 / 每日目標 ----------
   targets: {
@@ -87,7 +87,8 @@ window.CONFIG = {
                   cue: '手肘貼住身邊，只係前臂郁；壓到底停一停。', sub: '啞鈴過頭三頭伸展', avoid: ['wrist'], painSub: { wrist: null } },
     reverseFly: { name: '反向飛鳥／面拉 Reverse Fly / Face Pull', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
                   cue: '用膊頭後面發力向外拉開，唔好聳膊。', sub: '彈力帶拉開', avoid: ['shoulder'], painSub: { shoulder: null } },
-    hipThrust:  { name: '臀推／臀橋 Hip Thrust', type: 'compound', unit: 'kg', inc: 5, rest: '90 秒',
+    hipThrust:  { noMachine: true, // 要槓鈴，chocoZAP 冇；唔再用
+                  name: '臀推／臀橋 Hip Thrust', type: 'compound', unit: 'kg', inc: 5, rest: '90 秒',
                   cue: '下巴微收，頂到最高時夾實臀部；唔好用腰頂。', sub: '徒手臀橋', avoid: [], painSub: { back: 'gluteBridge' } },
     ohTriceps:  { name: '過頭三頭伸展 Overhead Triceps Ext.', type: 'isolation', unit: 'kg', inc: 1, rest: '60–90 秒',
                   cue: '手肘指向前上方唔好向外開，慢慢落。', sub: '繩索三頭下壓', avoid: ['shoulder'], painSub: { shoulder: 'pushdown' } },
@@ -132,7 +133,7 @@ window.CONFIG = {
       { key: 'legPress', sets: 3, reps: [8, 12], note: '想試保加利亞分腿蹲可以，但先用徒手、確定膝頭同平衡 OK。' },
       { key: 'latPulldown', sets: 3, reps: [8, 12] },
       { key: 'reverseFly', sets: 3, reps: [12, 15] },
-      { key: 'hipThrust', sets: 3, reps: [10, 12] },
+      { key: 'legCurl', sets: 3, reps: [10, 12] },
       { key: 'latRaise', sets: 3, reps: [12, 15] },
       { key: 'ohTriceps', sets: 2, reps: [12, 15] },
       { key: 'cableCurl', sets: 2, reps: [10, 15] } ] },
