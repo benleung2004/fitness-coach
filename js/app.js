@@ -1128,12 +1128,11 @@ function startGym(t, mode) {
 function vSession() {
   const a = S.active;
   const ph = phase();
-  const rpeOpts = ['', 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
-  const mins = Math.round((Date.now() - a.startedAt) / 60000);
+    const mins = Math.round((Date.now() - a.startedAt) / 60000);
   return `<div class="card hero">
     <div class="big">${esc(workoutName({ type: a.type, mode: a.mode }))}</div>
     <p class="small">目標 RPE ${a.mode === 'return' ? 6 : C.phases[ph].rpe}${ph === 1 ? '（頭 4 週唔好做到力竭）' : ''} · 已經 ${mins} 分鐘</p>
-    <p class="small muted">每組做完撳 ✓，會自動開始休息計時。RPE 10 = 一下都做唔到；7 = 仲有 3 下。</p>
+    <p class="small muted">每組做完撳 ✓，會自動開始休息計時。RPE 10 = 一下都做唔到；7 = 仲有 3 下。</p>${rpeHelp}
     ${weightGuideHtml(!gymWorkouts().length)}
     <button class="btn block" data-act="guidedOn">▶️ 引導模式（一個一個動作帶住做）</button>
     ${a.pain && a.pain !== 'none' ? `<p class="small" style="color:var(--warn)">${esc(C.painAdvice[a.pain])}</p>` : ''}
@@ -1158,7 +1157,7 @@ function vSession() {
         <span class="n">${j + 1}</span>
         <input type="number" inputmode="decimal" step="0.5" placeholder="${wPlaceholder}" ${ex.unit === 'kg' ? '' : 'disabled'} data-set="${i},${j},w" value="${esc(s.w)}">
         <input type="number" inputmode="numeric" placeholder="${it.reps[1]}" data-set="${i},${j},r" value="${esc(s.r)}">
-        <select data-set="${i},${j},rpe">${rpeOpts.map(v => `<option value="${v}" ${String(s.rpe) === String(v) ? 'selected' : ''}>${v === '' ? 'RPE' : v}</option>`).join('')}</select>
+        <select data-set="${i},${j},rpe">${rpeOpts.map(v => `<option value="${v}" ${String(s.rpe) === String(v) ? 'selected' : ''}>${v === '' ? 'RPE' : rpeLabel(v)}</option>`).join('')}</select>
         <button class="setbtn ${s.done ? 'on' : ''}" data-act="doneSet" data-i="${i}" data-j="${j}">✓</button>
       </div>`).join('')}
       <div class="row"><button class="btn sm ghost" data-act="addSet" data-i="${i}">＋ 加一組</button>
@@ -1187,6 +1186,10 @@ function cardioCard(a) {
     <p class="small muted">燃脂、練心肺都靠呢部分；做完會自動記入本週帶氧（${c.minutes} 分鐘）。</p>
     <button class="btn block ${c.done ? 'ghost' : ''}" data-act="cardioDone" style="margin-top:8px">${c.done ? '取消' : '✓ 帶氧做完'}</button></div>`;
 }
+const rpeOpts = ['', 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
+// RPE 選項文字：顯示仲剩幾多下
+const rpeLabel = v => v === '' ? '—' : v === 10 ? '10 力竭' : Number.isInteger(v) ? `${v}（剩${10 - v}下）` : `${v}（剩${Math.floor(10 - v)}–${Math.ceil(10 - v)}下）`;
+const rpeHelp = `<details><summary>❓ RPE 係咩？</summary><p class="small">RPE = 自覺辛苦程度（1–10）。做完一組問自己：「仲可以做多幾下標準動作？」</p><ul class="clean small"><li>10：一下都做唔到（力竭）</li><li>9：仲做到 1 下</li><li>8：仲做到 2 下</li><li>7：仲做到 3 下 ← 頭 4 週目標</li><li>6 或以下：好輕鬆，下次可以加重</li></ul><p class="small muted">唔肯定可以唔揀；App 會用 RPE 判斷下次加重定減重。</p></details>`;
 function vGuided() {
   const a = S.active, n = a.items.length;
   if (!n) return vSession();
@@ -1199,8 +1202,7 @@ function vGuided() {
   const prog = progression(it.key, it.reps);
   if (adj().deload[it.key]) prog.text = '🔧 教練調整：今次減 10% 重量，專心做足次數同姿勢。';
   const unit = ex.unit === 'sec' ? '秒' : '下';
-  const rpeOpts = ['', 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
-  const prev = j > 0 ? it.sets[j - 1] : null;
+    const prev = j > 0 ? it.sets[j - 1] : null;
   const nextIt = a.items.slice(i + 1).find(x => curSet(x) >= 0);
   const wu = j === 0 ? warmupText(it.key, prog.w) : '';
   return `<div class="card">
@@ -1217,9 +1219,11 @@ function vGuided() {
       <div class="grid3">
         <label class="f" style="margin:0">重量 kg<input type="number" inputmode="decimal" step="0.5" ${ex.unit === 'kg' ? '' : 'disabled'} data-set="${i},${j},w" value="${esc(s.w)}"></label>
         <label class="f" style="margin:0">${unit}數<input type="number" inputmode="numeric" placeholder="${it.reps[1]}" data-set="${i},${j},r" value="${esc(s.r)}"></label>
-        <label class="f" style="margin:0">RPE<select data-set="${i},${j},rpe">${rpeOpts.map(v => `<option value="${v}" ${String(s.rpe) === String(v) ? 'selected' : ''}>${v === '' ? '—' : v}</option>`).join('')}</select></label>
+        <label class="f" style="margin:0">RPE<select data-set="${i},${j},rpe">${rpeOpts.map(v => `<option value="${v}" ${String(s.rpe) === String(v) ? 'selected' : ''}>${rpeLabel(v)}</option>`).join('')}</select></label>
       </div>
+      ${rpeHelp}
       <button class="btn block xl" data-act="doneSet" data-i="${i}" data-j="${j}" style="margin-top:12px">✓ 做完第 ${j + 1} 組</button>
+      ${a.items.some((x, k) => k !== i && curSet(x) >= 0) ? `<button class="btn block ghost" data-act="gDefer" style="margin-top:8px">⏭ 部機有人用：先做下個動作（呢個擺去最後）</button>` : ''}
       <p class="small muted" style="margin:6px 0 0">撳完會自動開始休息 ${restSecs(it.key)} 秒計時。次數唔填就當做到 ${it.reps[1]} ${unit}。</p>`
     : `<div class="gset">呢個動作完成 ✅</div>${nextIt ? `<button class="btn block xl" data-act="gGo" data-i="${a.items.indexOf(nextIt)}">下一個：${esc(C.exercises[nextIt.key].name)} →</button>` : ''}`}
     <div class="grid2" style="margin-top:12px"><button class="btn ghost" data-act="gGo" data-i="${i - 1}" ${i === 0 ? 'disabled' : ''}>← 上一個</button><button class="btn ghost" data-act="gGo" data-i="${i + 1}" ${i === n - 1 ? 'disabled' : ''}>下一個 →</button></div>
@@ -1554,6 +1558,7 @@ function exModal(key) {
     ${ex ? `<p class="small">🔁 <b>冇呢部機／做唔到：</b>${esc(ex.sub)}</p><p class="small muted">休息：${esc(ex.rest)}</p>` : ''}
     ${ex && ex.unit === 'kg' ? weightGuideHtml(false) : ''}
     ${used.length ? `<p class="small"><b>📅 喺你計劃入面：</b>${used.map(esc).join('、')}</p>` : ''}
+    ${it.video ? `<a class="btn block" href="${esc(it.video)}" target="_blank" rel="noopener">▶️ 你跟開嘅示範片</a><div style="height:8px"></div>` : ''}
     <a class="btn block blue" href="${yt}" target="_blank" rel="noopener">▶️ YouTube 搵教學片</a>
     ${it.credit ? `<p class="small muted" style="margin-top:8px">${esc(it.credit)}</p>` : ''}
     <div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`);
@@ -1647,6 +1652,7 @@ function settingsModal() {
     <h3 style="margin-top:20px">🤖 交俾 Claude 調整</h3>
     <p class="small muted">匯出你所有紀錄（唔包括相片），連埋 App 自動分析出嚟嘅「教練觀察」、做得多／做得少、動作完成率。AirDrop 或者傳去 Mac 嘅 <code>Desktop/fitness-coach/logs/</code>，再喺 Claude Code 講「睇最新 log 幫我調整」。Claude 會睇晒全部紀錄，就算你乜都唔寫都會分析。</p>
     <label class="f">想 Claude 特別幫你改咩？（可以唔填）<textarea id="sNote" placeholder="例如：晚更好難去 gym，想改返工前 30 分鐘版本">${esc(S.noteForClaude)}</textarea></label>
+    <div class="row between" style="margin:-4px 0 10px"><span class="small muted" id="sNoteState">打字會自動儲存</span><button class="btn sm" data-act="saveNote">💾 儲存</button></div>
     <button class="btn block blue" data-act="exportClaude">📤 匯出俾 Claude（JSON）</button>
     <div style="height:8px"></div>
     <button class="btn block ghost" data-act="copySummary">📋 複製文字摘要（可以直接貼俾 Claude）</button>
@@ -1877,6 +1883,13 @@ const actions = {
   cancelGym() { if (confirm('確定放棄？今次記錄唔會儲存。')) { S.active = null; stopTimer(); keepAwake(false); save(); render(); } },
   guidedOn() { S.active.guided = true; UI.gi = null; persist(); keepAwake(true); render(); window.scrollTo(0, 0); },
   guidedOff() { S.active.guided = false; persist(); keepAwake(false); render(); window.scrollTo(0, 0); },
+  gDefer() {
+    const a = S.active, i = UI.gi; if (!a || i == null || !a.items[i]) return;
+    const [it] = a.items.splice(i, 1); a.items.push(it);
+    const k = a.items.findIndex(x => curSet(x) >= 0);
+    UI.gi = k < 0 ? 0 : k; save(); render(); window.scrollTo(0, 0);
+    toast(`「${C.exercises[it.key].name}」擺咗去最後，部機得閒再做`);
+  },
   gGo(el) { const k = Number(el.dataset.i); if (S.active && k >= 0 && k < S.active.items.length) { UI.gi = k; render(); window.scrollTo(0, 0); } },
   delWorkout(el) { if (confirm('刪除呢個訓練紀錄？')) { S.deleted[el.dataset.id] = Date.now(); S.workouts = S.workouts.filter(w => w.id !== el.dataset.id); save(); render(); } },
   delAct(el) { if (confirm('刪除呢個活動？')) { S.deleted[el.dataset.id] = Date.now(); S.activities = S.activities.filter(a => a.id !== el.dataset.id); save(); render(); } },
@@ -1958,6 +1971,7 @@ const actions = {
     setNote($('#sNote').value);
     save(); closeModal(); render(); toast('已儲存設定');
   },
+  saveNote() { setNote($('#sNote').value); save(); const t = $('#sNoteState'); if (t) t.textContent = '✅ 已儲存'; toast('已儲存'); },
   exportClaude() { setNote($('#sNote').value); S.lastBackup = today(); save(); exportClaude(); },
   async copySummary() {
     setNote($('#sNote').value); save();
@@ -2030,6 +2044,7 @@ document.addEventListener('input', e => {
   if (t.dataset.set) setField(t, true);
   if (t.id === 'libSearch') { UI.libQ = t.value; filterLibrary(); }
   if (t.dataset.note != null && S.active) { S.active.items[t.dataset.note].note = t.value; persist(); }
+  if (t.id === 'sNote') { setNote(t.value); persist(); const st = $('#sNoteState'); if (st) st.textContent = '✅ 已自動儲存'; }
 });
 function setField(t) {
   if (!S.active) return;

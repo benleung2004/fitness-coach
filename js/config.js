@@ -4,7 +4,7 @@
 // 改完記得將 sw.js 入面嘅 CACHE_VERSION 加 1，手機先會攞到新版。
 // =============================================================
 window.CONFIG = {
-  version: '1.7.0',
+  version: '1.8.0',
 
   // ---------- 每週 / 每日目標 ----------
   targets: {
@@ -43,7 +43,7 @@ window.CONFIG = {
                   sub: '高腳杯深蹲 Goblet Squat／徒手分腿蹲', avoid: ['knee'], painSub: { knee: 'gluteBridge' } },
     row:        { name: '坐姿划船（鋼索）Seated Cable Row', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
                   cue: '鋼索滑輪機兩邊滑輪調到最低，坐喺訓練椅；挺胸，先夾背，再用手肘拉向肚臍；唔好用腰向後拗。',
-                  sub: '單手啞鈴划船（一隻手同膝頭撐喺凳上）', avoid: [], painSub: {} },
+                  sub: '企姿單手鋼索划船：滑輪調到胸口高度，企定一隻腳踏前，一次拉一邊（唔使啞鈴）', avoid: [], painSub: {} },
     chestPress: { name: '器械胸推 Machine Chest Press', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
                   cue: '肩胛骨收埋貼住背墊，推到手差唔多直但唔鎖死，慢慢放返。',
                   sub: '啞鈴臥推／跪地掌上壓', avoid: ['shoulder'], painSub: { shoulder: null } },
@@ -72,10 +72,10 @@ window.CONFIG = {
                   cue: '下背貼地，用腹肌將膊頭捲離地面；唔好用手拉頸。',
                   sub: '死蟲式 Dead Bug', avoid: ['back'], painSub: { back: 'deadBug' } },
     abMachine:  { name: '腹背機捲腹 Ab Crunch Machine', type: 'core', unit: 'kg', inc: 2.5, rest: '60 秒',
-                  cue: '坐好，手臂掛住上面嘅墊；呼氣用腹肌將上身向前捲落去，唔好用手拉；慢慢返原位。',
+                  cue: '墊放喺胸前，雙腳踩住前面黑色橫桿，雙手抱住墊；呼氣用腹肌向前彎落去，吸氣慢慢返原位。',
                   sub: '鋼索滑輪機跪地捲腹（繩索）', avoid: ['back'], painSub: { back: 'deadBug' } },
     backExt:    { name: '背伸展 Back Extension', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
-                  cue: '下背舒服先做；上到身體一直線就停，唔好過度向後拗。',
+                  cue: '墊放喺背後，雙腳踩住黑色橫桿，扣好左邊安全帶；雙手胸前交叉，慢慢向後倒，吸氣返原位；唔好過度拗腰。',
                   sub: '鳥狗式 Bird-dog／臀橋', avoid: ['back'], painSub: { back: 'birdDog' } },
     dbBench:    { name: '啞鈴臥推 Dumbbell Bench Press', type: 'compound', unit: 'kg', inc: 1, rest: '90–120 秒',
                   cue: '肩胛骨收埋，手肘大約 45 度；落到胸側，推返上去。',
