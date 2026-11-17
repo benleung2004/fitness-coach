@@ -100,7 +100,24 @@ const saveSY = () => { try { localStorage.setItem(SYNC_KEY, JSON.stringify(SY));
 const DEVICE = (() => { let d = null; try { d = localStorage.getItem('fc_device'); if (!d) { d = Math.random().toString(36).slice(2, 10); localStorage.setItem('fc_device', d); } } catch (e) {} return d || 'unknown'; })();
 let syncTimer = null, syncing = false, syncAgain = false;
 const syncReady = () => !!(SY.repo && SY.token);
-function scheduleSync() { if (!syncReady()) return; clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(false), 4000); }
+function scheduleSync() { if (!syncReady()) return; clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(false), 4000); setSync('pending'); }
+// 頂部同步狀態：有改動 → 正在同步 → 已同步
+let syncState = 'idle';
+function setSync(st) {
+  if (st) syncState = st;
+  const el = document.getElementById('syncPill'); if (!el) return;
+  let txt, cls;
+  if (!syncReady()) { txt = '📱 未連接同步（只存喺呢部機）'; cls = ''; }
+  else if (!navigator.onLine) { txt = '📴 離線：有網會自動同步'; cls = 'pending'; }
+  else if (syncState === 'syncing') { txt = '🔄 正在同步…'; cls = 'syncing'; }
+  else if (syncState === 'pending') { txt = '✏️ 有改動，準備同步…'; cls = 'pending'; }
+  else if (SY.lastError) { txt = '⚠️ 同步失敗（撳一下再試）'; cls = 'err'; }
+  else if (SY.lastSync) { const d = new Date(SY.lastSync); txt = `☁️ 已同步 ${pad(d.getHours())}:${pad(d.getMinutes())}`; cls = 'ok'; }
+  else { txt = '☁️ 已連接'; cls = 'ok'; }
+  el.textContent = txt; el.className = 'sync-pill ' + cls;
+}
+window.addEventListener('online', () => { setSync(); syncNow(false); });
+window.addEventListener('offline', () => setSync());
 const b64enc = s => { const b = new TextEncoder().encode(s); let bin = ''; for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(bin); };
 const b64dec = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\s/g, '')), c => c.charCodeAt(0)));
 function ghFetch(opts = {}, path = SYNC_PATH) {
@@ -122,7 +139,7 @@ async function syncNow(manual) {
   if (!syncReady()) return;
   if (!navigator.onLine) { if (manual) toast('而家離線，有網會自動同步'); return; }
   if (syncing) { syncAgain = true; return; }
-  syncing = true; clearTimeout(syncTimer);
+  syncing = true; clearTimeout(syncTimer); setSync('syncing');
   try {
     let ok = false;
     for (let attempt = 0; attempt < 3 && !ok; attempt++) {
@@ -150,6 +167,7 @@ async function syncNow(manual) {
     else render();
   } finally {
     syncing = false;
+    setSync(syncAgain ? 'pending' : 'idle');
     const st = document.getElementById('syncStatus'); if (st) st.textContent = syncStatusText();
     if (syncAgain) { syncAgain = false; scheduleSync(); }
   }
@@ -853,8 +871,9 @@ function recommend(ci) {
 // ---------- 畫面 ----------
 function render() {
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === UI.tab));
-  $('#topTitle').textContent = S.profile.nickname ? `${S.profile.nickname} 嘅健身教練` : '健身教練';
-  const sb = $('#switchBtn'); if (sb) sb.textContent = `⇄ ${(PT.data && PT.data.nickname) || C.partner.name}`;
+  $('#topTitle').textContent = S.profile.nickname ? `${S.profile.nickname}'s 健身教練` : '健身教練';
+  const sb = $('#switchBtn'); if (sb) sb.textContent = `⇄ ${partnerNick()}`;
+  setSync();
   $('#topSub').textContent = `${fmtDate(today())} · 第 ${weekNo()} 週 · 第 ${phase()} 階段`;
   const views = { today: vToday, train: vTrain, library: vLibrary, activity: vActivity, progress: vProgress, food: vFood, partner: vPartner };
   $('#app').innerHTML = views[UI.tab]();
@@ -867,6 +886,11 @@ const opts = (name, map, cur) => `<div class="opts">${Object.entries(map).map(([
   `<button class="opt ${String(cur) === String(k) ? 'on' : ''}" data-act="pick" data-name="${name}" data-v="${k}">${v}</button>`).join('')}</div>`;
 
 // ---------- 👫 對方頁（只讀） ----------
+// 對方暱稱：先睇同一部機另一個頁面，再睇同步落嚟嘅資料
+function partnerNick() {
+  try { const o = JSON.parse(localStorage.getItem(SFX ? 'fc_v1' : 'fc_v1_her') || '{}'); if (o.profile && o.profile.nickname) return o.profile.nickname; } catch (e) {}
+  return (PT.data && PT.data.nickname) || C.partner.name;
+}
 const partnerUrl = () => { try { return new URL(C.partner.url, location.href).href.split('#')[0]; } catch (e) { return C.partner.url; } };
 // 用對方資料計每週數字（暫時換 S，計完即刻換返）
 function withData(d, fn) { const keep = S; S = Object.assign(blank(), { workouts: d.workouts || [], activities: d.activities || [], days: d.days || {}, body: d.body || [] }); try { return fn(); } finally { S = keep; } }
@@ -2196,7 +2220,7 @@ document.addEventListener('input', e => {
   if (t.id === 'libSearch') { UI.libQ = t.value; filterLibrary(); }
   if (t.dataset.note != null && S.active) { S.active.items[t.dataset.note].note = t.value; persist(); }
   if (t.id === 'mealNote') UI.mealDraft = t.value;
-  if (t.id === 'sNote') { setNote(t.value); persist(); const st = $('#sNoteState'); if (st) st.textContent = '✅ 已自動儲存'; }
+  if (t.id === 'sNote') { setNote(t.value); save(); const st = $('#sNoteState'); if (st) st.textContent = '✅ 已自動儲存'; }
 });
 function setField(t) {
   if (!S.active) return;

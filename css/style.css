@@ -202,3 +202,7 @@ a.btn { text-decoration: none; }
 .tbl th, .tbl td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: center; }
 .tbl td:first-child, .tbl th:first-child { text-align: left; color: var(--muted); }
 .switch-btn { background: var(--card2); color: var(--text); border: 0; border-radius: 12px; height: 44px; padding: 0 12px; font-size: 14px; font-family: inherit; white-space: nowrap; }
+.sync-pill { margin-top: 4px; background: var(--card2); color: var(--muted); border: 0; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-family: inherit; }
+.sync-pill.syncing, .sync-pill.pending { color: var(--warn); }
+.sync-pill.ok { color: var(--accent); }
+.sync-pill.err { color: var(--danger); }
