@@ -201,3 +201,4 @@ a.btn { text-decoration: none; }
 .tbl { border-collapse: collapse; font-size: 14px; }
 .tbl th, .tbl td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: center; }
 .tbl td:first-child, .tbl th:first-child { text-align: left; color: var(--muted); }
+.switch-btn { background: var(--card2); color: var(--text); border: 0; border-radius: 12px; height: 44px; padding: 0 12px; font-size: 14px; font-family: inherit; white-space: nowrap; }

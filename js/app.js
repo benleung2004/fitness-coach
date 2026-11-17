@@ -95,7 +95,7 @@ const SYNC_KEY = 'fc_sync' + SFX, SYNC_PATH = USER === 'me' ? 'data/fitness.json
 let SY;
 try { SY = JSON.parse(localStorage.getItem(SYNC_KEY) || '{}'); } catch (e) { SY = {}; }
 // 同一部手機已經喺另一個頁面連接咗：沿用同一個 repo 同 token
-if (SFX && !SY.token) { try { const m = JSON.parse(localStorage.getItem('fc_sync') || '{}'); if (m.token) SY = { repo: m.repo, token: m.token, name: m.name }; } catch (e) {} }
+if (!SY.token) { try { const m = JSON.parse(localStorage.getItem(SFX ? 'fc_sync' : 'fc_sync_her') || '{}'); if (m.token) { SY = { repo: m.repo, token: m.token, name: m.name }; localStorage.setItem(SYNC_KEY, JSON.stringify(SY)); } } catch (e) {} }
 const saveSY = () => { try { localStorage.setItem(SYNC_KEY, JSON.stringify(SY)); } catch (e) {} };
 const DEVICE = (() => { let d = null; try { d = localStorage.getItem('fc_device'); if (!d) { d = Math.random().toString(36).slice(2, 10); localStorage.setItem('fc_device', d); } } catch (e) {} return d || 'unknown'; })();
 let syncTimer = null, syncing = false, syncAgain = false;
@@ -854,6 +854,7 @@ function recommend(ci) {
 function render() {
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === UI.tab));
   $('#topTitle').textContent = S.profile.nickname ? `${S.profile.nickname} 嘅健身教練` : '健身教練';
+  const sb = $('#switchBtn'); if (sb) sb.textContent = `⇄ ${(PT.data && PT.data.nickname) || C.partner.name}`;
   $('#topSub').textContent = `${fmtDate(today())} · 第 ${weekNo()} 週 · 第 ${phase()} 階段`;
   const views = { today: vToday, train: vTrain, library: vLibrary, activity: vActivity, progress: vProgress, food: vFood, partner: vPartner };
   $('#app').innerHTML = views[UI.tab]();
@@ -901,6 +902,7 @@ function vOnboard() {
   return `<div class="card hero">
     <div class="big">你嘅目標唔係急住減重，而係建立每週 2–3 次穩定運動。</div>
     <p class="muted">先填幾樣基本資料（只會存喺你部手機）。</p>
+    ${syncReady() ? '<p class="small">☁️ 已連接同步：如果之前用過，紀錄會自動讀返落嚟，等幾秒就得，唔使再填。</p>' : ''}
     <label class="f">暱稱（可以唔填）<input id="obName" maxlength="20"></label>
     <div class="grid2">
       <label class="f">身高 cm<input id="obH" type="number" inputmode="decimal"></label>
@@ -2002,6 +2004,13 @@ const actions = {
     const intensity = ch.kind === 'run' && c.level !== 'easy' ? 'vigorous' : (C.gymExtras.cardio[c.level] || {}).intensity || c.intensity;
     Object.assign(c, { choice: el.dataset.k, kind: ch.kind, key: ch.key, text: ch.text, intensity, title: `${ch.label} ${c.minutes} 分鐘（${LV[intensity] || ''}）` });
     save(); render();
+  },
+  async switchUser(el) {
+    // 轉頁前先上傳未同步嘅改動，兩邊資料都會自動同步
+    el.textContent = '轉緊…';
+    if (S.active) persist();
+    try { if (syncReady() && navigator.onLine) await Promise.race([syncNow(false), new Promise(r => setTimeout(r, 4000))]); } catch (e) {}
+    location.href = partnerUrl();
   },
   copyPartnerUrl() { const u = partnerUrl(); navigator.clipboard.writeText(u).then(() => toast('已複製連結'), () => toast(u)); },
   refreshPartner() { fetchPartner(true); toast('讀取緊…'); },
