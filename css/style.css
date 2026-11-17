@@ -131,7 +131,7 @@ details summary { cursor: pointer; color: var(--blue); font-size: 14px; margin: 
 /* 底部導航 */
 .tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
-  display: grid; grid-template-columns: repeat(6, 1fr);
+  display: grid; grid-template-columns: repeat(7, 1fr);
   background: rgba(20,22,28,.97); border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -197,3 +197,7 @@ a.btn { text-decoration: none; }
 .seg-b { min-height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--card2); color: var(--text); font-size: 15px; font-family: inherit; }
 .seg-b.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
 .mealph { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; background: var(--card2); flex: none; display: flex; align-items: center; justify-content: center; }
+
+.tbl { border-collapse: collapse; font-size: 14px; }
+.tbl th, .tbl td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: center; }
+.tbl td:first-child, .tbl th:first-child { text-align: left; color: var(--muted); }

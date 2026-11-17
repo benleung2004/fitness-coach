@@ -4,7 +4,7 @@
 // 改完記得將 sw.js 入面嘅 CACHE_VERSION 加 1，手機先會攞到新版。
 // =============================================================
 window.CONFIG = {
-  version: '1.8.0',
+  version: '1.9.0',
 
   // ---------- 每週 / 每日目標 ----------
   targets: {
@@ -189,11 +189,17 @@ window.CONFIG = {
     night:  { start: '23:00', end: '08:00' }
   },
 
-  // 女朋友班表（可選，只用嚟搵一齊做運動嘅時間）
+  // 返工班次（用嚟排 gym／通勤）同班表格仔簡稱
+  workShifts: ['early', 'office', 'middle'],
+  rosterShifts: { early: '早', office: '辦', middle: '晚', night: '夜', rest: '休' },
+  // 對方頁面：資料檔、網址（相對呢頁）
+  partner: { name: '女朋友', path: 'data/her.json', url: 'her/' },
+
+  // 女朋友班表（對方未有自己頁面／未同步時用；有同步就自動讀對方真實班表）
   gfShifts: {
     A:   { name: 'A',   start: '07:00', end: '16:00' },
     P:   { name: 'P',   start: '13:00', end: '22:00' },
-    SA:  { name: 'SA',  start: '07:00', end: '13:30' },
+    SA:  { name: 'SA',  start: '07:00', end: '14:00' },
     N:   { name: 'N',   start: '21:00', end: '07:00' },
     Day: { name: 'Day', start: '09:00', end: '18:00' },
     off: { name: '休',  start: null,    end: null }
@@ -209,6 +215,14 @@ window.CONFIG = {
       easy:   { minutes: 8, kind: 'cycle', intensity: 'light', title: '輕鬆踩 8 分鐘', key: 'bike',
                 text: '單車或者臥式單車輕鬆踩，當收操。' }
     },
+    // 帶氧可以自己揀機（時間同強度跟當日狀態）
+    cardioChoices: {
+      incline: { label: '斜坡行', kind: 'walk', key: 'treadmill', text: '跑步機坡度 8–12%、時速 4.5–5.5；想辛苦啲就加坡度，唔使跑。' },
+      run:     { label: '跑步機跑', kind: 'run', key: 'treadmill', text: '慢跑 2 分鐘 + 快行 1 分鐘重複；或者 30 秒快跑 + 90 秒行 × 6。膝頭唔舒服就唔好揀。' },
+      bike:    { label: '單車', kind: 'cycle', key: 'bike', text: '健身室單車：中等阻力踩，或者 30 秒快踩 + 90 秒慢踩重複。對膝頭最輕。' },
+      walker:  { label: '太空漫步機', kind: 'walk', key: null, text: '太空漫步機（橢圓機）手腳一齊郁，大步慢慢擺；對膝頭好輕。' }
+    },
+    warmupChoices: { bike: { label: '單車', text: '單車輕鬆踩 5 分鐘' }, walk: { label: '跑步機快行', text: '跑步機快行 5 分鐘（唔使斜坡）' }, walker: { label: '太空漫步機', text: '太空漫步機輕鬆擺 5 分鐘' } },
     kneeText: '膝頭唔舒服：唔好行斜坡，改用臥式單車或者太空漫步機，時間一樣。',
     homeCore: '返屋企做 5 分鐘核心：平板支撐 30 秒 × 2、捲腹 15 下 × 2（gym 冇位瞓地，留返屋企做）。'
   },
@@ -225,7 +239,7 @@ window.CONFIG = {
   together: {
     window: ['07:00', '22:00'],  // 可以做運動嘅時段
     commuteBuffer: 45,           // 上班前後預留（分鐘）
-    sleepAfterNight: 360,        // 通宵更後瞓覺（分鐘）
+    sleepAfterNight: 480,        // 通宵更後瞓覺（分鐘）：落更 07:00 → 大約 15:00 先起身
     preNight: 120,               // 通宵更前休息（分鐘）
     minMinutes: 90,
     ideas: { long: '一齊行大埔滘自然護理區，或者沿吐露港單車徑踩去大美督', short: '一齊沿大埔海濱公園快行，或者一齊去 gym' }
@@ -294,3 +308,49 @@ window.CONFIG = {
     { id: 'log30', text: '累計記錄 30 日' }
   ]
 };
+
+// =============================================================
+// 女朋友頁面（her/index.html 設定 window.FC_USER = 'her'）
+// 個人數據（身高、體重、體脂）只喺佢部手機輸入，唔寫入呢度。
+// =============================================================
+if (window.FC_USER === 'her') (function (C) {
+  C.user = 'her';
+  C.partner = { name: '男朋友', path: 'data/fitness.json', url: '../' };
+  C.goalText = '目標：減脂、身形實啲。每週 2–3 次 gym + 每日多行路；體重慢慢落（每週 0.3–0.5kg）就最理想。';
+  C.targets = Object.assign({}, C.targets, { cardioMinutes: 200, stepsLow: 7000, stepsHigh: 9000 });
+  C.shifts = {
+    A:      { name: 'A 更', tip: '16:00 放工，之後去 gym 最好。' },
+    SA:     { name: 'SA 更', tip: '14:00 放工，下晝 gym 人少，最啱做完整訓練。' },
+    Day:    { name: 'Day 更', tip: '18:00 放工：gym 人多就改快行 30 分鐘。' },
+    P:      { name: 'P 更', tip: '13:00 返工：上晝去 gym，做完食個午餐先返工。' },
+    night:  { name: 'N 更', tip: 'N 更前後唔做重訓。落更瞓夠先，瞓醒行 15–20 分鐘 + 伸展。' },
+    rest:   { name: '休息日', tip: '最適合做完整 gym；平日上晝或者下晝 chocoZAP 人較少。' },
+    travel: { name: '旅行', tip: '旅行行路都計活動分鐘，返嚟照常繼續。' },
+    sick:   { name: '病咗', tip: '今日休息、飲水、瞓覺。好返先慢慢恢復。' }
+  };
+  C.shiftDefaults = {
+    A:     { start: '07:00', end: '16:00' },
+    SA:    { start: '07:00', end: '14:00' },
+    Day:   { start: '09:00', end: '18:00' },
+    P:     { start: '13:00', end: '22:00' },
+    night: { start: '21:00', end: '07:00' }
+  };
+  C.workShifts = ['A', 'SA', 'Day', 'P'];
+  C.rosterShifts = { A: 'A', SA: 'SA', Day: 'Day', P: 'P', night: 'N', rest: '休' };
+  // 男朋友未同步時嘅後備班表
+  C.gfShifts = {
+    early:  { name: '早', start: '08:00', end: '16:00' },
+    office: { name: '辦', start: '08:45', end: '17:30' },
+    middle: { name: '晚', start: '16:00', end: '23:00' },
+    night:  { name: '夜', start: '23:00', end: '08:00' },
+    rest:   { name: '休', start: null, end: null }
+  };
+  C.commute = null;
+  C.gymExtras = Object.assign({}, C.gymExtras, { cardio: {
+    hard:   Object.assign({}, C.gymExtras.cardio.hard, { minutes: 20, title: '間歇帶氧 20 分鐘（中高強度）' }),
+    normal: Object.assign({}, C.gymExtras.cardio.normal, { minutes: 20, title: '斜坡行 20 分鐘' }),
+    easy:   Object.assign({}, C.gymExtras.cardio.easy, { minutes: 10, title: '輕鬆踩 10 分鐘' })
+  } });
+  C.nutritionGoal = '減脂飲食：每餐一個手掌份量蛋白質（每日大約 70–90g）、半碟菜、飯半碗；飲品走甜。唔使捱餓，慢慢減先唔會反彈。';
+  C.milestones = C.milestones.filter(m => !/commute/i.test(m.id));
+})(window.CONFIG);

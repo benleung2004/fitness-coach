@@ -2,7 +2,9 @@
 (function () {
 'use strict';
 const C = window.CONFIG;
-const KEY = 'fc_v1';
+const USER = C.user || 'me';
+const SFX = USER === 'me' ? '' : '_' + USER;   // 唔同人用唔同儲存位，同一部手機開兩個頁面都唔會撈亂
+const KEY = 'fc_v1' + SFX;
 const GYM_TYPES = ['gymA', 'gymB', 'd1', 'd2', 'd3'];
 
 // ---------- 小工具 ----------
@@ -89,9 +91,11 @@ function mergeData(R) {
 }
 
 // ---------- GitHub 私人 repo 同步（token 只存喺呢部機，唔會匯出） ----------
-const SYNC_KEY = 'fc_sync', SYNC_PATH = 'data/fitness.json';
+const SYNC_KEY = 'fc_sync' + SFX, SYNC_PATH = USER === 'me' ? 'data/fitness.json' : `data/${USER}.json`;
 let SY;
 try { SY = JSON.parse(localStorage.getItem(SYNC_KEY) || '{}'); } catch (e) { SY = {}; }
+// 同一部手機已經喺另一個頁面連接咗：沿用同一個 repo 同 token
+if (SFX && !SY.token) { try { const m = JSON.parse(localStorage.getItem('fc_sync') || '{}'); if (m.token) SY = { repo: m.repo, token: m.token, name: m.name }; } catch (e) {} }
 const saveSY = () => { try { localStorage.setItem(SYNC_KEY, JSON.stringify(SY)); } catch (e) {} };
 const DEVICE = (() => { let d = null; try { d = localStorage.getItem('fc_device'); if (!d) { d = Math.random().toString(36).slice(2, 10); localStorage.setItem('fc_device', d); } } catch (e) {} return d || 'unknown'; })();
 let syncTimer = null, syncing = false, syncAgain = false;
@@ -99,8 +103,8 @@ const syncReady = () => !!(SY.repo && SY.token);
 function scheduleSync() { if (!syncReady()) return; clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(false), 4000); }
 const b64enc = s => { const b = new TextEncoder().encode(s); let bin = ''; for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(bin); };
 const b64dec = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\s/g, '')), c => c.charCodeAt(0)));
-function ghFetch(opts = {}) {
-  return fetch(`https://api.github.com/repos/${SY.repo}/contents/${SYNC_PATH}`, Object.assign({ cache: 'no-store' }, opts, {
+function ghFetch(opts = {}, path = SYNC_PATH) {
+  return fetch(`https://api.github.com/repos/${SY.repo}/contents/${path}`, Object.assign({ cache: 'no-store' }, opts, {
     headers: Object.assign({ Authorization: `Bearer ${SY.token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }, opts.headers || {})
   }));
 }
@@ -137,7 +141,7 @@ async function syncNow(manual) {
     }
     if (!ok) throw new Error('多部機同時同步，稍後再試');
     SY.lastSync = Date.now(); SY.lastError = ''; saveSY();
-    uploadMeals();
+    uploadMeals(); fetchPartner();
     if (manual) toast('☁️ 同步完成');
   } catch (e) {
     SY.lastError = e.message === 'auth' ? 'Token 無效、過期，或者冇呢個 repo 嘅權限' : (e.message === 'Failed to fetch' ? '連唔到 GitHub' : e.message);
@@ -149,6 +153,34 @@ async function syncNow(manual) {
     const st = document.getElementById('syncStatus'); if (st) st.textContent = syncStatusText();
     if (syncAgain) { syncAgain = false; scheduleSync(); }
   }
+}
+// ---------- 對方紀錄（只讀）：用同一個 token 讀對方嘅資料檔 ----------
+const PARTNER_KEY = 'fc_partner' + SFX;
+let PT = {};
+try { PT = JSON.parse(localStorage.getItem(PARTNER_KEY) || '{}'); } catch (e) { PT = {}; }
+let partnerBusy = false;
+function trimPartner(d) {
+  const from = addDays(today(), -42);
+  const days = {}; Object.entries(d.days || {}).forEach(([k, v]) => { if (k >= from) days[k] = v; });
+  return { nickname: (d.profile || {}).nickname || '', roster: d.roster || {}, shiftTimesEffective: d.shiftTimesEffective || {}, shiftNames: d.shiftNames || {},
+    plan7: d.plan7 || [], workouts: (d.workouts || []).filter(w => w.date >= from), activities: (d.activities || []).filter(a => a.date >= from), days,
+    current: d.current || {}, syncAt: (d.sync || {}).at || d.exportedAt || '' };
+}
+async function fetchPartner(force) {
+  if (!syncReady() || !C.partner || partnerBusy || !navigator.onLine) return;
+  if (!force && PT.at && Date.now() - PT.at < 120000) return;
+  partnerBusy = true;
+  try {
+    const r = await ghFetch({}, C.partner.path);
+    if (r.status === 404) PT = { at: Date.now(), data: null, missing: true };
+    else if (r.ok) {
+      const j = await r.json();
+      const text = j.content ? b64dec(j.content) : await (await ghFetch({ headers: { Accept: 'application/vnd.github.raw' } }, C.partner.path)).text();
+      PT = { at: Date.now(), data: trimPartner(JSON.parse(text)) };
+    } else throw new Error('GitHub 回應 ' + r.status);
+    try { localStorage.setItem(PARTNER_KEY, JSON.stringify(PT)); } catch (e) {}
+  } catch (e) { PT.error = e.message === 'Failed to fetch' ? '連唔到 GitHub' : e.message; }
+  finally { partnerBusy = false; if (UI.tab === 'partner') render(); }
 }
 function syncStatusText() {
   if (!syncReady()) return '未連接：資料只存喺呢部機。';
@@ -506,8 +538,8 @@ async function loadSun() {
 }
 
 // ---------- 班表 ----------
-const ROSTER_SHIFTS = { early: '早', office: '辦', middle: '晚', night: '夜', rest: '休' };
-const WORK_SHIFTS = ['early', 'office', 'middle'];
+const ROSTER_SHIFTS = C.rosterShifts;
+const WORK_SHIFTS = C.workShifts;
 const toMin = t => { if (!t || !/^\d\d:\d\d$/.test(t)) return null; const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 const fmtMin = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; };
 function shiftTimes() {
@@ -529,13 +561,16 @@ function shiftLabel(sh, d) {
   return (C.shifts[sh] ? C.shifts[sh].name : sh) + (T ? ` ${T.start}–${T.end}` : '');
 }
 // 放工時間夠早（20:00 前）先建議成程行／踩返屋企
-const commuteFeasible = (sh, d) => { const T = timesFor(sh, d); const e = T && toMin(T.end); return WORK_SHIFTS.includes(sh) && e != null && e <= 1200 && e >= 360; };
+const commuteFeasible = (sh, d) => { if (!C.commute) return false; const T = timesFor(sh, d); const e = T && toMin(T.end); return WORK_SHIFTS.includes(sh) && e != null && e <= 1200 && e >= 360; };
 function gymScore(sh) {
   if (!sh || adj().shiftPref[sh] === 'cardio') return 0;
   if (sh === 'rest') return 1;
-  if (sh === 'early') return 2;
-  if (sh === 'office') return 2.5;
-  if (sh === 'middle') { const T = shiftTimes().middle; const st = toMin(T.start), e = toMin(T.end); return (st != null && st >= 660) || (e != null && e <= 1200) ? 3 : 0; }
+  if (!WORK_SHIFTS.includes(sh)) return 0;
+  // 越早放工越好（1 最好）；11 點後先返工 = 返工前去
+  const T = shiftTimes()[sh] || {}; const st = toMin(T.start), e = toMin(T.end);
+  if (e != null && e <= 990) return 2;
+  if (e != null && e <= 1080) return 2.5;
+  if ((st != null && st >= 660) || (e != null && e <= 1200)) return 3;
   return 0;
 }
 // 未來 n 日計劃：每週排夠理想 gym 次數、唔連續兩日，其餘按班次排通勤／帶氧／恢復
@@ -570,20 +605,20 @@ function planText(p) {
   if (p.kind === 'restday') return '唔做運動，休息一日（行路、通勤照計）';
   if (p.kind === 'done') return noGym() ? '已經做咗肌力訓練' : '已經做咗 gym';
   if (p.kind === 'gym' && noGym()) {
-    const when = p.shift === 'rest' ? '任何時間' : p.shift === 'middle' && st != null && st >= 660 ? `返工前 ${fmtMin(st - 120)}` : `放工返到屋企 ${e != null ? fmtMin(e + 60) : ''}`;
+    const when = p.shift === 'rest' ? '任何時間' : WORK_SHIFTS.includes(p.shift) && st != null && st >= 660 ? `返工前 ${fmtMin(st - 120)}` : `放工返到屋企 ${e != null ? fmtMin(e + 60) : ''}`;
     return `屋企徒手肌力 3 輪（未有 gym 暫代）：${when}`;
   }
   if (p.kind === 'gym') {
     if (p.shift === 'rest') return rosterShift(addDays(p.date, -1)) === 'night' ? 'Gym：夜更後先瞓夠，下晝 3 點後先去' : 'Gym：上晝 10–12 點（人少）';
-    if (p.shift === 'middle' && st != null && st >= 660) return `Gym：返工前 ${fmtMin(st - 150)} 開始（做大約 75 分鐘）`;
+    if (WORK_SHIFTS.includes(p.shift) && st != null && st >= 660) return `Gym：返工前 ${fmtMin(st - 150)} 開始（做大約 75 分鐘）`;
     return `Gym：放工後 ${e != null ? fmtMin(e + 45) : ''} 左右`;
   }
-  if (p.kind === 'commute') {
+  if (p.kind === 'commute' && C.commute) {
     const arrive = e + C.commute.minutes.walk;
     const dark = arrive > toMin(sunset(p.date)) + 20;
     return `${fmtMin(e)} 放工行／踩返屋企${dark ? `（日落 ${sunset(p.date)}，後半程會黑，帶燈）` : '（天黑前到）'}`;
   }
-  if (p.kind === 'cardio') return p.shift === 'rest' ? '快行／踩單車 30–45 分鐘' : '返工前快行／踩單車 30 分鐘（收工太夜唔行返屋企）';
+  if (p.kind === 'cardio') return p.shift === 'rest' ? '快行／踩單車 30–45 分鐘' : C.commute ? '返工前快行／踩單車 30 分鐘（收工太夜唔行返屋企）' : '返工前或者放工後快行 30 分鐘';
   if (p.kind === 'recovery') return '夜更：瞓醒行 15 分鐘 + 伸展，瞓覺優先';
   return '未入班表';
 }
@@ -592,6 +627,7 @@ function commuteAdvice(d, sh) {
   sh = sh || rosterShift(d) || ((S.days[d] || {}).checkin || {}).shift;
   if (!sh) return { ok: false, shift: null, lines: ['未知今日班次：答咗今日問答或者入咗班表，就會幫你判斷。'] };
   if (sh === 'night') return { ok: false, shift: sh, lines: ['夜更：今日唔建議行／跑返屋企，瞓覺優先。'] };
+  if (!C.commute) return { ok: false, shift: sh, lines: [] };
   if (!WORK_SHIFTS.includes(sh)) return { ok: false, shift: sh, lines: ['今日唔使返工。想練通勤路線，可以揀涼爽時間試行一段。'] };
   const e = toMin(timesFor(sh, d).end);
   const wx = weatherState();
@@ -611,6 +647,19 @@ function commuteAdvice(d, sh) {
 }
 // ---------- 同女朋友一齊郁：搵兩個人都得閒嘅時段 ----------
 const gfShift = d => (S.gfRoster && S.gfRoster[d] && S.gfRoster[d].s) || null;
+// 對方班次：有同步就用對方自己入嘅班表，冇就用手動填嘅
+const partnerAuto = () => !!(PT.data && Object.keys(PT.data.roster || {}).length);
+function partnerShift(d) {
+  const r = PT.data && PT.data.roster && PT.data.roster[d];
+  if (r && r.s) return { s: r.s, auto: true };
+  const m = gfShift(d); return m ? { s: m, auto: false } : null;
+}
+function partnerTimes(x, d) {
+  if (!x) return null;
+  if (x.auto) { const T = (PT.data.shiftTimesEffective || {})[x.s]; if (!T || !T.start) return null; return { start: T.start, end: (T.endFri && pd(d).getDay() === 5) ? T.endFri : T.end }; }
+  const g = C.gfShifts[x.s]; return g && g.start ? g : null;
+}
+const partnerShiftName = x => !x ? '' : x.auto ? ((PT.data.shiftNames || {})[x.s] || x.s) : ((C.gfShifts[x.s] || {}).name || x.s);
 // 一日入面有咩時間唔得閒（分鐘區間），包括返工前後交通、通宵更前休息同之後瞓覺
 function busyIntervals(cur, prev) {
   const G = C.together, out = [];
@@ -631,13 +680,12 @@ function freeIntervals(busy) {
   return free;
 }
 function togetherWindow(d) {
-  const mine = rosterShift(d), hers = gfShift(d);
+  const mine = rosterShift(d), hers = partnerShift(d);
   if (!S.profile.gfMode || !mine || !hers) return null;
   const myT = sh => (sh && sh !== 'rest' ? timesFor(sh, d) : null);
   const myPrev = rosterShift(addDays(d, -1));
-  const herT = sh => { const g = C.gfShifts[sh]; return g && g.start ? g : null; };
   const a = freeIntervals(busyIntervals(myT(mine), myPrev && myPrev !== 'rest' ? timesFor(myPrev, addDays(d, -1)) : null));
-  const b = freeIntervals(busyIntervals(herT(hers), herT(gfShift(addDays(d, -1)))));
+  const b = freeIntervals(busyIntervals(partnerTimes(hers, d), partnerTimes(partnerShift(addDays(d, -1)), addDays(d, -1))));
   let best = null;
   a.forEach(([x, y]) => b.forEach(([p, q]) => { const s0 = Math.max(x, p), e0 = Math.min(y, q); if (e0 - s0 >= C.together.minMinutes && (!best || e0 - s0 > best[1] - best[0])) best = [s0, e0]; }));
   return best;
@@ -645,9 +693,9 @@ function togetherWindow(d) {
 function togetherText(d) {
   const w = togetherWindow(d);
   if (!w) return '';
-  return `👫 同女朋友都得閒 ${fmtMin(w[0])}–${fmtMin(w[1])}：${w[1] - w[0] >= 150 ? C.together.ideas.long : C.together.ideas.short}`;
+  return `👫 同${C.partner.name}都得閒 ${fmtMin(w[0])}–${fmtMin(w[1])}：${w[1] - w[0] >= 150 ? C.together.ideas.long : C.together.ideas.short}`;
 }
-const mapUrl = mode => `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(C.commute.origin)}&destination=${encodeURIComponent(S.profile.home || C.commute.homeDefault)}&travelmode=${mode}`;
+const mapUrl = mode => !C.commute ? '' : `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(C.commute.origin)}&destination=${encodeURIComponent(S.profile.home || C.commute.homeDefault)}&travelmode=${mode}`;
 
 // ---------- Apple Watch（經 iPhone「捷徑」拷貝 → 貼上，或者 Safari 網址 #h&…） ----------
 const SHORTCUT_NAME = '健身數據';
@@ -733,7 +781,7 @@ function recommend(ci) {
   const isReturn = !noGym() && lg && daysSinceGym >= C.rules.returnAfterDays;
   const tmpl = nextTemplate();
   if (togetherText(t)) extra.push(togetherText(t));
-  if (WORK_SHIFTS.includes(ci.shift) && ci.energy !== 'low') {
+  if (C.commute && WORK_SHIFTS.includes(ci.shift) && ci.energy !== 'low') {
     const cm = commuteAdvice(t, ci.shift);
     if (cm.ok) extra.push(`放工可以行／踩單車返屋企（${C.rules.commuteKm} km）：${cm.lines[0]}。記得喺「活動」記錄。`);
   }
@@ -774,7 +822,7 @@ function recommend(ci) {
   if (ci.pref === 'cycle') return cardio('cycle', Math.min(ci.time, 45), '你今日想踩單車');
   if (ci.pref === 'home') return { kind: 'home', icon: '🏠', title: C.homeCircuit.name, summary: C.homeCircuit.note, why: why.concat('你今日想喺屋企做'), extra, minimum: '最低版本：做 1 輪。' };
   if (ci.pref === 'sport') {
-    if (S.profile.gfMode) return { kind: 'cardio', cardioKind: 'hike', minutes: Math.min(ci.time, 60), icon: '👫', title: '同女朋友一齊郁', summary: '可以一齊行山（例如大埔滘自然護理區）、沿海濱行或者一齊去 gym。', why: why.concat('女朋友模式開咗'), extra, minimum };
+    if (S.profile.gfMode) return { kind: 'cardio', cardioKind: 'hike', minutes: Math.min(ci.time, 60), icon: '👫', title: `同${C.partner.name}一齊郁`, summary: '可以一齊行山（例如大埔滘自然護理區）、沿海濱行或者一齊去 gym。', why: why.concat('一齊做運動模式開咗'), extra, minimum };
     return cardio('hike', Math.min(ci.time, 60), '你今日想做戶外運動');
   }
   if (ci.pref === 'gym') {
@@ -807,7 +855,7 @@ function render() {
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === UI.tab));
   $('#topTitle').textContent = S.profile.nickname ? `${S.profile.nickname} 嘅健身教練` : '健身教練';
   $('#topSub').textContent = `${fmtDate(today())} · 第 ${weekNo()} 週 · 第 ${phase()} 階段`;
-  const views = { today: vToday, train: vTrain, library: vLibrary, activity: vActivity, progress: vProgress, food: vFood };
+  const views = { today: vToday, train: vTrain, library: vLibrary, activity: vActivity, progress: vProgress, food: vFood, partner: vPartner };
   $('#app').innerHTML = views[UI.tab]();
   if (UI.tab === 'progress') fillPhotos();
   if (UI.tab === 'library') filterLibrary();
@@ -817,6 +865,38 @@ function render() {
 const opts = (name, map, cur) => `<div class="opts">${Object.entries(map).map(([k, v]) =>
   `<button class="opt ${String(cur) === String(k) ? 'on' : ''}" data-act="pick" data-name="${name}" data-v="${k}">${v}</button>`).join('')}</div>`;
 
+// ---------- 👫 對方頁（只讀） ----------
+const partnerUrl = () => { try { return new URL(C.partner.url, location.href).href.split('#')[0]; } catch (e) { return C.partner.url; } };
+// 用對方資料計每週數字（暫時換 S，計完即刻換返）
+function withData(d, fn) { const keep = S; S = Object.assign(blank(), { workouts: d.workouts || [], activities: d.activities || [], days: d.days || {}, body: d.body || [] }); try { return fn(); } finally { S = keep; } }
+function vPartner() {
+  const P = PT.data, nm = C.partner.name;
+  if (!syncReady()) return `<div class="card"><h2>👫 ${esc(nm)}</h2><p class="small">要先喺 ⚙︎ 設定連接「多裝置同步」，先讀到${esc(nm)}嘅紀錄。</p></div>`;
+  if (Date.now() - (PT.at || 0) > 30000) setTimeout(() => fetchPartner(true), 0);
+  if (!P) return `<div class="card"><h2>👫 ${esc(nm)}</h2><p class="small">${PT.missing ? `${esc(nm)}未開始用（或者未連接同步）。喺 ⚙︎ 設定複製連結俾對方。` : PT.error ? '⚠️ ' + esc(PT.error) : '讀取緊…'}</p><button class="btn sm ghost" data-act="refreshPartner">重新讀取</button></div>`;
+  const ws = weekStart(today());
+  const me = weekStats(ws), them = withData(P, () => weekStats(ws));
+  const inW = d => d >= ws && d <= addDays(ws, 6);
+  const tog = arr => new Set(arr.filter(x => x.together && inW(x.date)).map(x => x.date)).size; // 計日數，gym + 帶氧同一日只計一次
+  const row = (l, a, b) => `<tr><td>${l}</td><td>${a ?? '–'}</td><td>${b ?? '–'}</td></tr>`;
+  const who = esc(P.nickname || nm);
+  const from = addDays(today(), -6);
+  const items = [
+    ...P.workouts.filter(w => w.date >= from).map(w => ({ date: w.date, at: w.at || 0, html: `🏋️ ${esc(w.name || workoutName(w))}${w.together ? ' 👫' : ''}<div class="small muted">${(w.exercises || []).filter(e => e.sets.some(s => s.done)).map(e => `${esc((C.exercises[e.key] || {}).name || e.key)} ${e.sets.filter(s => s.done).map(s => (s.w != null ? s.w + 'kg×' : '') + (s.r ?? '')).join(', ')}`).join('<br>')}</div>` })),
+    ...P.activities.filter(a => a.date >= from).map(a => ({ date: a.date, at: a.at || 0, html: `${ACT_KINDS[a.kind] || a.kind} ${a.minutes} 分鐘${a.together ? ' 👫' : ''}<div class="small muted">${esc(INTENSITY[a.intensity] || '')}${a.note ? ' · ' + esc(a.note) : ''}</div>` })),
+    ...Object.entries(P.days || {}).filter(([d, x]) => d >= from && x.restDay).map(([d]) => ({ date: d, at: 0, html: '😌 休息日（唔做運動）' }))
+  ].sort((a, b) => b.date.localeCompare(a.date) || b.at - a.at);
+  const shiftOf = d => { const x = partnerShift(d); return x ? partnerShiftName(x) : ''; };
+  const plan = (P.plan7 || []).filter(p => p.date >= today());
+  return `<div class="card"><div class="row between"><h2>👫 本週：我 vs ${who}</h2><button class="btn sm ghost" data-act="refreshPartner">↻</button></div>
+    <table class="tbl" style="width:100%"><tr><th></th><th>我</th><th>${who}</th></tr>
+    ${row('Gym', me.gym, them.gym)}${row('帶氧分鐘', me.cardio, them.cardio)}${row('平均步數', me.avgSteps, them.avgSteps)}${row('平均瞓', me.avgSleep, them.avgSleep)}${row('記錄日數', me.logDays, them.logDays)}${row('👫 一齊做（日）', tog(S.workouts.concat(S.activities)), tog(P.workouts.concat(P.activities)))}</table>
+    <p class="small muted">${who}上次同步：${P.syncAt ? esc(P.syncAt.slice(5, 16).replace('T', ' ')) : '–'}。只可以睇，改唔到對方紀錄。</p></div>
+    <div class="card"><h2>最近 7 日（${who}）</h2>${items.length ? items.map(x => `<div class="list-item"><div><b>${fmtDate(x.date)}</b> ${x.html}</div></div>`).join('') : '<p class="muted small">呢 7 日未有紀錄。</p>'}</div>
+    <div class="card"><h2>未來 7 日</h2>${Array.from({ length: 7 }, (_, i) => addDays(today(), i)).map(d => { const pp = plan.find(p => p.date === d); const tw = togetherText(d);
+      return `<div class="list-item"><div><b>${shortDate(d)} ${WD[pd(d).getDay()]}</b> <span class="small">我：${esc(rosterShift(d) ? (C.shifts[rosterShift(d)] || {}).name || '' : '–')} · ${who}：${esc(shiftOf(d) || '–')}</span>
+        ${pp && pp.text ? `<div class="small muted">${who}：${esc(pp.text)}</div>` : ''}${tw ? `<div class="small">${esc(tw)}</div>` : ''}</div></div>`; }).join('')}</div>`;
+}
 function vOnboard() {
   return `<div class="card hero">
     <div class="big">你嘅目標唔係急住減重，而係建立每週 2–3 次穩定運動。</div>
@@ -827,7 +907,8 @@ function vOnboard() {
       <label class="f">而家體重 kg<input id="obW" type="number" inputmode="decimal" step="0.1"></label>
     </div>
     <label class="f">開始日期<input id="obStart" type="date" value="${today()}"></label>
-    <label class="row f"><input type="checkbox" id="obGf"> 女朋友有時會一齊做運動</label>
+    <label class="row f"><input type="checkbox" id="obGf" ${USER === 'me' ? '' : 'checked'}> ${C.partner.name}有時會一齊做運動</label>
+    ${C.goalText ? `<p class="small">${esc(C.goalText)}</p>` : ''}
     <button class="btn block" data-act="onboard">開始</button>
     <p class="small muted" style="margin-top:10px">已經喺另一部機用緊？先撳右上角 ⚙︎ →「多裝置同步」連接，紀錄會自動搬過嚟。</p>
   </div>`;
@@ -950,10 +1031,10 @@ function vToday() {
     <div class="quick">
       <button class="btn ghost" data-act="quickGym">✅ Gym 做完</button>
       <button class="btn ghost" data-act="logAct" data-kind="walk" data-min="30">🚶 行咗 30 分鐘</button>
-      <button class="btn ghost" data-act="logAct" data-kind="cycle" data-min="30" data-commute="1">🚲 踩單車返工／放工</button>
+      ${C.commute ? '<button class="btn ghost" data-act="logAct" data-kind="cycle" data-min="30" data-commute="1">🚲 踩單車返工／放工</button>' : '<button class="btn ghost" data-act="logAct" data-kind="walk" data-min="20" data-commute="1">🚶 行路返工／放工</button>'}
       <button class="btn ghost" data-act="water2L">💧 飲咗 2L 水</button>
       <button class="btn ghost" data-act="slept7">😴 瞓咗 7 粒鐘</button>
-      <button class="btn ghost" data-act="logAct" data-kind="walk" data-min="105" data-km="${C.rules.commuteKm}" data-commute="1">🏠 行返屋企</button>
+      ${C.commute ? `<button class="btn ghost" data-act="logAct" data-kind="walk" data-min="105" data-km="${C.rules.commuteKm}" data-commute="1">🏠 行返屋企</button>` : '<button class="btn ghost" data-act="logAct" data-kind="hike" data-min="60">⛰️ 行山</button>'}
       <button class="btn ${x.restDay ? '' : 'ghost'}" data-act="toggleRestDay" style="grid-column:1/-1">${x.restDay ? '↩️ 取消：今日都做運動' : '😌 今日唔做運動（休息，行路照計）'}</button>
     </div>
   </div>
@@ -981,6 +1062,14 @@ function rosterModal() {
   const gf = UI.rosterWho === 'gf';
   const T = shiftTimes();
   const t0 = today(), start = weekStart(t0);
+  if (gf && partnerAuto()) {
+    const rows7 = Array.from({ length: 14 }, (_, i) => addDays(today(), i)).map(d => { const x = partnerShift(d); return `<div class="list-item"><span>${shortDate(d)} ${WD[pd(d).getDay()]}</span><span class="small">${x ? esc(partnerShiftName(x)) : '—'}</span></div>`; }).join('');
+    modal(`<h2>📅 班表</h2>
+      <div class="seg" style="grid-template-columns:1fr 1fr;margin-bottom:8px"><button class="seg-b" data-act="rosterWho" data-w="me">我</button><button class="seg-b on" data-act="rosterWho" data-w="gf">👫 ${esc(C.partner.name)}</button></div>
+      <p class="small muted">✅ ${esc(C.partner.name)}已經喺自己個頁面入咗班表，呢度自動讀取，唔使你填。</p>${rows7}
+      <div style="height:12px"></div><button class="btn block ghost" data-act="closeModal">完成</button>`);
+    return;
+  }
   const opts = gf ? Object.fromEntries(Object.entries(C.gfShifts).map(([k, v]) => [k, v.name])) : ROSTER_SHIFTS;
   const get = gf ? gfShift : rosterShift;
   let rows = '';
@@ -989,24 +1078,20 @@ function rosterModal() {
     if (d < t0) continue;
     if (pd(d).getDay() === 1 || d === t0) rows += `<div class="small muted" style="margin:10px 0 2px">${shortDate(weekStart(d))} 嗰週</div>`;
     const cur = get(d), mine = rosterShift(d);
-    rows += `<div class="rrow"><span class="rd">${shortDate(d)} ${WD[pd(d).getDay()]}${gf && mine ? `<span class="small muted" style="display:block">我：${ROSTER_SHIFTS[mine] || ''}</span>` : ''}</span><div class="seg" style="grid-template-columns:repeat(${Object.keys(opts).length},1fr)">${Object.entries(opts).map(([k, v]) =>
+    rows += `<div class="rrow"><span class="rd">${shortDate(d)} ${WD[pd(d).getDay()]}${gf && mine ? `<span class="small muted" style="display:block">我：${esc(ROSTER_SHIFTS[mine] || '')}</span>` : ''}</span><div class="seg" style="grid-template-columns:repeat(${Object.keys(opts).length},1fr)">${Object.entries(opts).map(([k, v]) =>
       `<button class="seg-b ${cur === k ? 'on' : ''}" data-act="setRoster" data-who="${gf ? 'gf' : 'me'}" data-d="${d}" data-s="${k}">${esc(v)}</button>`).join('')}</div></div>`;
   }
   const tRow = (k, label) => `<div class="ttrow"><span>${label}</span><input type="time" id="t-${k}-s" value="${esc(T[k].start)}"><span>–</span><input type="time" id="t-${k}-e" value="${esc(T[k].end)}"></div>`;
   const head = gf
-    ? `<p class="small muted">可選：只係用嚟搵你哋兩個都得閒、可以一齊做運動嘅時間。${S.profile.gfMode ? '' : '<b>要喺 ⚙︎ 設定開「女朋友模式」先會顯示。</b>'}</p>
+    ? `<p class="small muted">可選：只係用嚟搵你哋兩個都得閒、可以一齊做運動嘅時間。${S.profile.gfMode ? '' : '<b>要喺 ⚙︎ 設定開「一齊做運動模式」先會顯示。</b>'}</p>
        <p class="small muted">${Object.values(C.gfShifts).filter(v => v.start).map(v => `${v.name} ${v.start}–${v.end}`).join(' · ')}</p>`
     : `<h3>每更上落班時間</h3>
-    ${tRow('early', '早更')}
-    ${tRow('office', '辦公')}
-    <div class="ttrow"><span></span><span class="small muted" style="text-align:right">星期五</span><span></span><input type="time" id="t-office-f" value="${esc(T.office.endFri || T.office.end)}"></div>
-    ${tRow('middle', '晚更')}
-    ${tRow('night', '夜更')}
+    ${Object.keys(C.shiftDefaults).map(k => tRow(k, esc(C.shifts[k] ? C.shifts[k].name : k)) + (C.shiftDefaults[k].endFri ? `<div class="ttrow"><span></span><span class="small muted" style="text-align:right">星期五</span><span></span><input type="time" id="t-${k}-f" value="${esc(T[k].endFri || T[k].end)}"></div>` : '')).join('')}
     <button class="btn sm" data-act="saveShiftTimes" style="margin-top:6px">儲存時間</button>
     <h3 style="margin-top:18px">未來 5 星期（撳一下揀，再撳一下清除）</h3>
-    <p class="small muted">早＝早更、辦＝辦公時間、晚＝晚更、夜＝夜更、休＝休息日。即撳即存，會同步去其他裝置。</p>`;
+    <p class="small muted">${Object.entries(ROSTER_SHIFTS).map(([k, v]) => `${esc(v)}＝${esc(C.shifts[k] ? C.shifts[k].name : k)}`).join('、')}。即撳即存，會同步去其他裝置。</p>`;
   modal(`<h2>📅 班表</h2>
-    <div class="seg" style="grid-template-columns:1fr 1fr;margin-bottom:8px"><button class="seg-b ${gf ? '' : 'on'}" data-act="rosterWho" data-w="me">我</button><button class="seg-b ${gf ? 'on' : ''}" data-act="rosterWho" data-w="gf">👫 女朋友（可選）</button></div>
+    <div class="seg" style="grid-template-columns:1fr 1fr;margin-bottom:8px"><button class="seg-b ${gf ? '' : 'on'}" data-act="rosterWho" data-w="me">我</button><button class="seg-b ${gf ? 'on' : ''}" data-act="rosterWho" data-w="gf">👫 ${esc(C.partner.name)}（可選）</button></div>
     ${head}${rows}
     <div style="height:12px"></div><button class="btn block ghost" data-act="closeModal">完成</button>`);
 }
@@ -1071,7 +1156,7 @@ function vTrain() {
     ${C.phases[ph].rotation.map(tmplCard).join('')}
     <details class="card"><summary>睇${ph === 1 ? '第 2 階段' : '第 1 階段'}嘅訓練日</summary>${other.map(k => `<p><b>${esc(C.workouts[k].name)}</b>：${C.workouts[k].exercises.map(s => esc(C.exercises[s.key].name)).join('、')}</p>`).join('')}</details>
     <div class="card"><h2>訓練紀錄</h2>
-      ${hist.length ? hist.map(w => `<div class="list-item"><div><b>${fmtDate(w.date)}</b> ${esc(workoutName(w))}<div class="small muted">${w.quick ? '快速記錄' : `${(w.exercises || []).filter(e => e.sets.some(s => s.done)).length} 個動作`}${w.minutes ? ` · ${w.minutes} 分鐘` : ''}${w.note ? ' · ' + esc(w.note) : ''}</div></div>
+      ${hist.length ? hist.map(w => `<div class="list-item"><div><b>${fmtDate(w.date)}</b> ${esc(workoutName(w))}${w.together ? ' 👫' : ''}<div class="small muted">${w.quick ? '快速記錄' : `${(w.exercises || []).filter(e => e.sets.some(s => s.done)).length} 個動作`}${w.minutes ? ` · ${w.minutes} 分鐘` : ''}${w.note ? ' · ' + esc(w.note) : ''}</div></div>
         <button class="btn sm ghost" data-act="delWorkout" data-id="${w.id}">刪除</button></div>`).join('') : '<p class="muted">未有紀錄。第一次永遠最難，做完就係贏咗。</p>'}
     </div>`;
 }
@@ -1150,6 +1235,7 @@ function vSession() {
       <div class="small muted">${it.sets.length} 組 × ${it.reps[0]}–${it.reps[1]} ${unit} · 休息 ${esc(ex.rest)}</div></div></div>
       ${C.workouts[a.type].exercises.find(s => s.key === it.slot && s.note) ? `<div class="small muted">${esc(C.workouts[a.type].exercises.find(s => s.key === it.slot).note)}</div>` : ''}
       <div class="sug">${esc(prog.text)}${warmupText(it.key, prog.w) ? '<br>' + esc(warmupText(it.key, prog.w)) : ''}</div>
+      ${swapSelect(it, i)}
       <details><summary>姿勢提示／冇器材點算</summary><p class="small">✅ ${esc(ex.cue)}</p><p class="small">🔁 替代：${esc(ex.sub)}</p>
         <label class="row small"><input type="checkbox" data-alt="${i}" ${it.altUsed ? 'checked' : ''}> 今次用咗替代動作（唔計入加重建議）</label></details>
       <div class="sethead"><span>組</span><span>${ex.unit === 'kg' ? '重量 kg' : '—'}</span><span>${unit}數</span><span>RPE</span><span></span></div>
@@ -1165,6 +1251,7 @@ function vSession() {
     </div>`;
   }).join('')}</div>
   ${cardioCard(a)}
+  ${togetherBox(a)}
   <button class="btn block" data-act="finishGym">完成訓練 🎉</button>
   <div style="height:8px"></div>
   <button class="btn block danger" data-act="cancelGym">放棄今次（唔儲存）</button>`;
@@ -1175,18 +1262,32 @@ const weightGuideHtml = open => `<details ${open ? 'open' : ''}><summary>⚖️ 
 function warmCard(a) {
   if (!a.warm) return '';
   return `<div class="card ${a.warm.done ? '' : 'hero'}"><div class="row between"><h2>🔥 熱身 ${C.gymExtras.warmup.minutes} 分鐘</h2>${a.warm.done ? '<span class="chip ok">✓ 完成</span>' : ''}</div>
-    <p class="small">${esc(C.gymExtras.warmup.text)}</p>${exLink('bike', '單車點用')}
+    ${a.warm.done ? '' : `<div class="opts">${Object.entries(C.gymExtras.warmupChoices).map(([k, v]) => `<button class="opt ${a.warm.choice === k ? 'on' : ''}" data-act="warmPick" data-k="${k}">${esc(v.label)}</button>`).join('')}</div>`}
+    <p class="small">${a.warm.choice ? esc(C.gymExtras.warmupChoices[a.warm.choice].text) + ' → 第一部機用好輕重量做 1 組 × 12 先。' : esc(C.gymExtras.warmup.text)}</p>${exLink(a.warm.choice === 'walk' ? 'treadmill' : 'bike', a.warm.choice === 'walk' ? '跑步機點用' : '單車點用')}
     ${a.warm.done ? '' : '<button class="btn block" data-act="warmDone" style="margin-top:8px">✓ 熱身完成</button>'}</div>`;
 }
 function cardioCard(a) {
   const c = a.cardio;
   if (!c) return '';
   return `<div class="card"><div class="row between"><h2>🏃 帶氧收尾：${esc(c.title)}</h2>${c.done ? '<span class="chip ok">✓ 完成</span>' : ''}</div>
-    <p class="small">${esc(c.text)}</p>${exLink(c.key, c.key === 'bike' ? '單車點用' : '跑步機點用')}
+    ${c.done ? '' : `<p class="small muted" style="margin:4px 0">揀部機（時間同強度跟今日狀態）：</p><div class="opts">${Object.entries(C.gymExtras.cardioChoices).map(([k, v]) => `<button class="opt ${c.choice === k ? 'on' : ''}" data-act="cardioPick" data-k="${k}">${esc(v.label)}</button>`).join('')}</div>`}
+    <p class="small">${esc(c.text)}</p>${c.key ? exLink(c.key, c.key === 'bike' ? '單車點用' : '跑步機點用') : ''}
     <p class="small muted">燃脂、練心肺都靠呢部分；做完會自動記入本週帶氧（${c.minutes} 分鐘）。</p>
     <button class="btn block ${c.done ? 'ghost' : ''}" data-act="cardioDone" style="margin-top:8px">${c.done ? '取消' : '✓ 帶氧做完'}</button></div>`;
 }
 const rpeOpts = ['', 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
+// 換動作：同一部位、仲未開始做先可以換
+function swapOptions(key) {
+  const g = (L.items[key] || {}).group;
+  return Object.keys(C.exercises).filter(k => k !== key && L.items[k] && L.items[k].group === g && C.exercises[k].unit !== 'bw');
+}
+function swapSelect(it, i) {
+  if (it.sets.some(x => x.done)) return '';
+  const ks = swapOptions(it.key);
+  if (!ks.length) return '';
+  return `<label class="f small" style="margin:6px 0">🔄 部機有人用／唔鍾意？換同部位動作<select data-swap="${i}"><option value="">— 唔換 —</option>${ks.map(k => `<option value="${k}">${esc(C.exercises[k].name)}</option>`).join('')}</select></label>`;
+}
+const togetherBox = a => `<label class="row f" style="margin:0 0 10px"><input type="checkbox" data-together="1" ${a.together ? 'checked' : ''}> 👫 今次同${esc(C.partner.name)}一齊做</label>`;
 // RPE 選項文字：顯示仲剩幾多下
 const rpeLabel = v => v === '' ? '—' : v === 10 ? '10 力竭' : Number.isInteger(v) ? `${v}（剩${10 - v}下）` : `${v}（剩${Math.floor(10 - v)}–${Math.ceil(10 - v)}下）`;
 const rpeHelp = `<details><summary>❓ RPE 係咩？</summary><p class="small">RPE = 自覺辛苦程度（1–10）。做完一組問自己：「仲可以做多幾下標準動作？」</p><ul class="clean small"><li>10：一下都做唔到（力竭）</li><li>9：仲做到 1 下</li><li>8：仲做到 2 下</li><li>7：仲做到 3 下 ← 頭 4 週目標</li><li>6 或以下：好輕鬆，下次可以加重</li></ul><p class="small muted">唔肯定可以唔揀；App 會用 RPE 判斷下次加重定減重。</p></details>`;
@@ -1212,6 +1313,7 @@ function vGuided() {
     <div class="gname">${exLink(it.key, esc(ex.name))}</div>
     ${it.subFrom ? '<span class="chip warn">因痛替代</span>' : ''}
     <p class="small muted" style="margin:4px 0">✅ ${esc(ex.cue)}</p>
+    ${swapSelect(it, i)}
     <div class="sug">${esc(prog.text)}${wu ? '<br>' + esc(wu) : ''}</div>
     ${ex.unit === 'kg' ? weightGuideHtml(prog.w == null && j === 0) : ''}
     ${s ? `<div class="gset">第 ${j + 1} / ${it.sets.length} 組 · 目標 ${it.reps[0]}–${it.reps[1]} ${unit}</div>
@@ -1228,7 +1330,7 @@ function vGuided() {
     : `<div class="gset">呢個動作完成 ✅</div>${nextIt ? `<button class="btn block xl" data-act="gGo" data-i="${a.items.indexOf(nextIt)}">下一個：${esc(C.exercises[nextIt.key].name)} →</button>` : ''}`}
     <div class="grid2" style="margin-top:12px"><button class="btn ghost" data-act="gGo" data-i="${i - 1}" ${i === 0 ? 'disabled' : ''}>← 上一個</button><button class="btn ghost" data-act="gGo" data-i="${i + 1}" ${i === n - 1 ? 'disabled' : ''}>下一個 →</button></div>
   </div>
-  ${allDone ? `${cardioCard(a)}<div class="card hero"><div class="big">器械全部完成 🎉</div><p>${a.cardio && !a.cardio.done ? '做埋上面嘅帶氧收尾，再' : ''}伸展 5 分鐘就完成。</p><button class="btn block" data-act="finishGym">儲存訓練</button></div>` : ''}
+  ${allDone ? `${cardioCard(a)}${togetherBox(a)}<div class="card hero"><div class="big">器械全部完成 🎉</div><p>${a.cardio && !a.cardio.done ? '做埋上面嘅帶氧收尾，再' : ''}伸展 5 分鐘就完成。</p><button class="btn block" data-act="finishGym">儲存訓練</button></div>` : ''}
   <div class="grid2"><button class="btn ghost" data-act="guidedOff">📋 睇成個清單</button><button class="btn ghost" data-act="finishGym">提早完成</button></div>`;
 }
 // 引導模式時保持螢幕唔熄（iOS 16.4+ 支援；唔支援就算）
@@ -1248,7 +1350,8 @@ function finishGym() {
   S.workouts.push({ id: a.id, at: Date.now(), date: a.date, type: a.type, mode: a.mode, minutes, pain: a.pain,
     exercises: a.items.map(it => ({ key: it.key, slot: it.slot, subFrom: it.subFrom, altUsed: it.altUsed, note: it.note,
       sets: it.sets.map(s => ({ w: num(s.w), r: num(s.r), rpe: num(s.rpe), done: s.done })) })) });
-  if (a.cardio && a.cardio.done) S.activities.push({ id: uid(), at: Date.now(), date: a.date, kind: a.cardio.kind, minutes: a.cardio.minutes, intensity: a.cardio.intensity, note: 'gym 後帶氧：' + a.cardio.title });
+  if (a.together) { const w = S.workouts.find(x => x.id === a.id); if (w) w.together = true; }
+  if (a.cardio && a.cardio.done) S.activities.push({ id: uid(), at: Date.now(), date: a.date, kind: a.cardio.kind, minutes: a.cardio.minutes, intensity: a.cardio.intensity, note: 'gym 後帶氧：' + a.cardio.title, together: a.together || undefined });
   const A = adj();
   a.items.forEach(it => { if (A.deload[it.key] && it.sets.some(s => s.done)) delete A.deload[it.key]; });
   S.active = null;
@@ -1282,7 +1385,7 @@ function vActivity() {
       <button class="btn ghost" data-act="logAct" data-kind="other" data-min="30">➕ 其他</button>
     </div>
   </div>
-  <div class="card">
+  ${C.commute ? `<div class="card">
     <h2>🏠 ${esc(C.commute.title)}</h2>
     <p class="small muted">中大 → 大埔屋企步行大約 ${C.rules.commuteKm} km（行 ${C.commute.minutes.walk} 分／踩 ${C.commute.minutes.cycle} 分）。</p>
     ${(() => { const cm = commuteAdvice(today()); return `<div class="sug"><b>今日${cm.shift ? `（${esc(C.shifts[cm.shift] ? C.shifts[cm.shift].name : cm.shift)}）` : ''}：</b>${cm.lines.map(esc).join('<br>')}</div>`; })()}
@@ -1297,9 +1400,9 @@ function vActivity() {
       <button class="btn ghost" data-act="logAct" data-kind="run" data-min="50" data-km="${C.rules.commuteKm}" data-commute="1" data-int="vigorous">🏃 跑／跑行返屋企</button>
       <button class="btn ghost" data-act="logAct" data-kind="walk" data-min="20" data-commute="1">🚶 行一段（落車後）</button>
     </div>
-  </div>
+  </div>` : ''}
   <div class="card"><h2>最近活動</h2>
-    ${list.length ? list.map(a => `<div class="list-item"><div><b>${fmtDate(a.date)}</b> ${ACT_KINDS[a.kind] || a.kind}${a.commute ? '（通勤）' : ''} ${a.minutes} 分鐘
+    ${list.length ? list.map(a => `<div class="list-item"><div><b>${fmtDate(a.date)}</b> ${ACT_KINDS[a.kind] || a.kind}${a.commute ? '（通勤）' : ''} ${a.minutes} 分鐘${a.together ? ' 👫' : ''}
       <div class="small muted">${esc(INTENSITY[a.intensity] || '')}${a.km ? ` · ${a.km} km` : ''}${a.note ? ' · ' + esc(a.note) : ''}</div></div>
       <button class="btn sm ghost" data-act="delAct" data-id="${a.id}">刪除</button></div>`).join('') : '<p class="muted">未有紀錄。</p>'}
   </div>`;
@@ -1314,7 +1417,8 @@ function actModal(o) {
     <label class="f">距離 km（可不填）<input id="aKm" type="number" inputmode="decimal" step="0.1" value="${o.km || ''}"></label></div>
     <label class="f">強度<select id="aInt">${ints}</select></label>
     <label class="f">日期<input id="aDate" type="date" value="${today()}"></label>
-    <label class="f">備註<input id="aNote" placeholder="例如：同女朋友、途經吐露港"></label>
+    <label class="f">備註<input id="aNote" placeholder="例如：途經吐露港"></label>
+    <label class="row f"><input type="checkbox" id="aTogether"> 👫 同${esc(C.partner.name)}一齊做</label>
     <input type="hidden" id="aCommute" value="${o.commute ? 1 : ''}">
     <div class="grid2"><button class="btn ghost" data-act="closeModal">取消</button><button class="btn" data-act="saveAct">儲存</button></div>`);
 }
@@ -1425,7 +1529,7 @@ function barChart(pts, target) {
 // ---------- 相片（IndexedDB，只存本機） ----------
 function idb() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open('fc_photos', 1);
+    const r = indexedDB.open('fc_photos' + SFX, 1);
     r.onupgradeneeded = () => r.result.createObjectStore('photos', { keyPath: 'id' });
     r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
   });
@@ -1450,7 +1554,7 @@ async function shrink(file, max = 1080, q = 0.85) {
 const MEAL_SLOTS = { breakfast: '🌅 早餐', lunch: '☀️ 午餐', dinner: '🌙 晚餐', snack: '🍪 小食／宵夜' };
 const mealSlotNow = () => { const h = new Date().getHours(); return h < 11 ? 'breakfast' : h < 16 ? 'lunch' : h < 21 ? 'dinner' : 'snack'; };
 const blobB64 = b => new Promise((res, rej) => { const f = new FileReader(); f.onload = () => res(String(f.result).split(',')[1]); f.onerror = () => rej(f.error); f.readAsDataURL(b); });
-const mealPath = m => `meals/${m.date}/${m.id}.jpg`;
+const mealPath = m => `meals${SFX ? '-' + USER : ''}/${m.date}/${m.id}.jpg`;
 const ghContents = (path, opts = {}) => fetch(`https://api.github.com/repos/${SY.repo}/contents/${path}`, Object.assign({ cache: 'no-store' }, opts, {
   headers: { Authorization: `Bearer ${SY.token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' } }));
 let mealUploading = false;
@@ -1597,7 +1701,7 @@ function vFood() {
   const N = C.nutrition;
   const meals = (S.meals || []).filter(m => m.date === today() && !(S.deleted || {})[m.id]).sort((a, b) => a.at - b.at);
   const status = m => m.up ? '☁️ 已上載，Claude 睇得到' : syncReady() ? '⏳ 等上載（有網會自動上）' : '📱 只喺呢部機（開咗同步先會上載）';
-  return `<div class="card">
+  return `${C.nutritionGoal ? `<div class="card"><h2>🎯 飲食目標</h2><p class="small">${esc(C.nutritionGoal)}</p></div>` : ''}<div class="card">
     <div class="row between"><h2>📸 食物相</h2><span class="small muted">每餐影一張</span></div>
     <p class="small muted">影相就得，唔使自己計。你同 Claude 講「睇最新 log 幫我調整」，Claude 會睇晒啲相，估蛋白質同建議點改。相只會上載去你嘅私人 repo。</p>
     ${opts('mealSlot', MEAL_SLOTS, UI.mealSlot || mealSlotNow())}
@@ -1632,9 +1736,12 @@ function settingsModal() {
     <label class="f">暱稱<input id="sName" value="${esc(p.nickname)}" maxlength="20"></label>
     <div class="grid2"><label class="f">身高 cm<input id="sH" type="number" value="${esc(p.heightCm)}"></label>
     <label class="f">開始日期<input id="sStart" type="date" value="${esc(p.startDate)}"></label></div>
-    <label class="row f"><input type="checkbox" id="sGf" ${p.gfMode ? 'checked' : ''}> 女朋友模式（建議一齊做嘅活動）</label>
+    <label class="row f"><input type="checkbox" id="sGf" ${p.gfMode ? 'checked' : ''}> 一齊做運動模式（同${esc(C.partner.name)}搵共同得閒時間）</label>
     <label class="row f"><input type="checkbox" id="sNoGym" ${p.noGym ? 'checked' : ''}> 未有 gym 會籍（gym 日暫時改做屋企徒手肌力同帶氧）</label>
-    <label class="f">屋企位置（通勤地圖終點，只存喺你嘅私人資料）<input id="sHome" value="${esc(p.home || '')}" placeholder="${esc(C.commute.homeDefault)}"></label>
+    ${C.commute ? `<label class="f">屋企位置（通勤地圖終點，只存喺你嘅私人資料）<input id="sHome" value="${esc(p.home || '')}" placeholder="${esc(C.commute.homeDefault)}"></label>` : ''}
+    <h3 style="margin-top:20px">👫 ${esc(C.partner.name)}嘅頁面</h3>
+    <p class="small muted">傳呢條連結俾對方，用 iPhone Safari 打開 → 分享 →「加入主畫面」。對方連接同步之後，兩邊都睇到對方紀錄（底部「👫 對方」）。</p>
+    <div class="row"><input readonly value="${esc(partnerUrl())}" style="margin:0;flex:1"><button class="btn sm" data-act="copyPartnerUrl">複製</button></div>
     <button class="btn block ghost" data-act="openRoster" style="margin-bottom:8px">📅 班表同上落班時間</button>
     <label class="f">訓練階段<select id="sPhase"><option value="auto" ${p.phaseOverride === 'auto' ? 'selected' : ''}>自動（建議）</option><option value="1" ${p.phaseOverride === '1' ? 'selected' : ''}>固定第 1 階段</option><option value="2" ${p.phaseOverride === '2' ? 'selected' : ''}>固定第 2 階段</option></select></label>
     <button class="btn block" data-act="saveSettings">儲存設定</button>
@@ -1666,7 +1773,7 @@ function settingsModal() {
 }
 function exportData() {
   return {
-    app: 'fitness-coach', exportedAt: new Date().toISOString(), configVersion: C.version,
+    app: 'fitness-coach', user: USER, shiftNames: Object.fromEntries(Object.entries(C.shifts).map(([k, v]) => [k, v.name])), exportedAt: new Date().toISOString(), configVersion: C.version,
     noteForClaude: S.noteForClaude, noteUpd: S.noteUpd || 0, deleted: S.deleted || {}, reviewSeen: S.reviewSeen || '', lastBackup: S.lastBackup || '',
     current: { phase: phase(), week: weekNo(), nextTemplate: nextTemplate(), weekStreak: weekStreak() },
     insights: insights().map(({ id, level, title, detail }) => ({ id, level, title, detail })),
@@ -1674,7 +1781,7 @@ function exportData() {
     exerciseCompletion: exerciseCompletion().map(({ key, name, planned, done }) => ({ key, name, planned, done })),
     adjustments: adj(), adjustLog: S.adjustLog || [], dismissedInsights: S.insightSeen || {},
     weeklySummaries: weeklySummaries(12),
-    roster: S.roster || {}, gfRoster: S.gfRoster || {}, shiftTimes: S.shiftTimes || null, shiftTimesEffective: shiftTimes(), plan7: planDays(today(), 7).map(p => ({ date: p.date, shift: p.shift, gfShift: gfShift(p.date), kind: p.kind, text: planText(p), together: togetherText(p.date) })),
+    roster: S.roster || {}, gfRoster: S.gfRoster || {}, shiftTimes: S.shiftTimes || null, shiftTimesEffective: shiftTimes(), plan7: planDays(today(), 7).map(p => ({ date: p.date, shift: p.shift, gfShift: (partnerShift(p.date) || {}).s || null, kind: p.kind, text: planText(p), together: togetherText(p.date) })),
     meals: S.meals || [],
     profile: S.profile, body: S.body, workouts: S.workouts, activities: S.activities, days: S.days, achieved: S.achieved
   };
@@ -1883,6 +1990,16 @@ const actions = {
   cancelGym() { if (confirm('確定放棄？今次記錄唔會儲存。')) { S.active = null; stopTimer(); keepAwake(false); save(); render(); } },
   guidedOn() { S.active.guided = true; UI.gi = null; persist(); keepAwake(true); render(); window.scrollTo(0, 0); },
   guidedOff() { S.active.guided = false; persist(); keepAwake(false); render(); window.scrollTo(0, 0); },
+  warmPick(el) { S.active.warm.choice = el.dataset.k; save(); render(); },
+  cardioPick(el) {
+    const c = S.active.cardio, ch = C.gymExtras.cardioChoices[el.dataset.k]; if (!c || !ch) return;
+    const LV = { vigorous: '中高強度', moderate: '中等強度', light: '輕鬆' };
+    const intensity = ch.kind === 'run' && c.level !== 'easy' ? 'vigorous' : (C.gymExtras.cardio[c.level] || {}).intensity || c.intensity;
+    Object.assign(c, { choice: el.dataset.k, kind: ch.kind, key: ch.key, text: ch.text, intensity, title: `${ch.label} ${c.minutes} 分鐘（${LV[intensity] || ''}）` });
+    save(); render();
+  },
+  copyPartnerUrl() { const u = partnerUrl(); navigator.clipboard.writeText(u).then(() => toast('已複製連結'), () => toast(u)); },
+  refreshPartner() { fetchPartner(true); toast('讀取緊…'); },
   gDefer() {
     const a = S.active, i = UI.gi; if (!a || i == null || !a.items[i]) return;
     const [it] = a.items.splice(i, 1); a.items.push(it);
@@ -1898,7 +2015,7 @@ const actions = {
     const minutes = num($('#aMin').value);
     if (!minutes || minutes <= 0) { toast('請填分鐘'); return; }
     const a = { date: $('#aDate').value || today(), kind: $('#aKind').value, minutes, intensity: $('#aInt').value,
-                km: num($('#aKm').value), commute: !!$('#aCommute').value, note: $('#aNote').value.trim() };
+                km: num($('#aKm').value), commute: !!$('#aCommute').value, note: $('#aNote').value.trim(), together: $('#aTogether').checked || undefined };
     closeModal(); addActivity(a); toast(`已記錄 ${minutes} 分鐘 👍`);
   },
   saveBody() {
@@ -1952,14 +2069,13 @@ const actions = {
   saveShiftTimes() {
     const t = {};
     const ok = v => toMin(v) != null;
-    for (const k of ['early', 'office', 'middle', 'night']) {
+    for (const k of Object.keys(C.shiftDefaults)) {
       const a = $(`#t-${k}-s`).value, b = $(`#t-${k}-e`).value;
-      if (!ok(a) || !ok(b)) { toast(`請填好${C.shifts[k].name}時間`); return; }
+      if (!ok(a) || !ok(b)) { toast(`請填好${C.shifts[k] ? C.shifts[k].name : k}時間`); return; }
       t[k] = { start: a, end: b };
+      const fEl = $(`#t-${k}-f`);
+      if (fEl) { if (!ok(fEl.value)) { toast('請填好星期五放工時間'); return; } t[k].endFri = fEl.value; }
     }
-    const f = $('#t-office-f').value;
-    if (!ok(f)) { toast('請填好星期五放工時間'); return; }
-    t.office.endFri = f;
     S.shiftTimes = { t, upd: Date.now() };
     save(); render(); toast('已儲存上落班時間');
   },
@@ -1967,7 +2083,7 @@ const actions = {
   saveSettings() {
     const p = S.profile;
     p.nickname = $('#sName').value.trim(); p.heightCm = num($('#sH').value) || '';
-    p.startDate = $('#sStart').value || p.startDate; p.gfMode = $('#sGf').checked; p.phaseOverride = $('#sPhase').value; p.home = $('#sHome').value.trim(); p.noGym = $('#sNoGym').checked; p.upd = Date.now();
+    p.startDate = $('#sStart').value || p.startDate; p.gfMode = $('#sGf').checked; p.phaseOverride = $('#sPhase').value; p.home = $('#sHome') ? $('#sHome').value.trim() : (p.home || ''); p.noGym = $('#sNoGym').checked; p.upd = Date.now();
     setNote($('#sNote').value);
     save(); closeModal(); render(); toast('已儲存設定');
   },
@@ -2001,6 +2117,14 @@ $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeM
 document.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset.set) { setField(t); return; }
+  if (t.dataset.swap != null && t.value && S.active) {
+    const it = S.active.items[t.dataset.swap], old = it.key;
+    it.key = t.value; it.swapFrom = it.swapFrom || old; it.subFrom = null;
+    const w = progression(it.key, it.reps).w;
+    it.sets.forEach(x => { if (!x.done) x.w = w ?? ''; });
+    save(); render(); toast(`已換做「${C.exercises[it.key].name}」`); return;
+  }
+  if (t.dataset.together && S.active) { S.active.together = t.checked; save(); return; }
   if (t.dataset.alt != null) { S.active.items[t.dataset.alt].altUsed = t.checked; save(); return; }
   if (t.dataset.actChange === 'strengthEx') { UI.strengthEx = t.value; render(); return; }
   if (t.dataset.field) {
@@ -2067,6 +2191,7 @@ window.addEventListener('hashchange', hashImport);
 render();
 hashImport();
 checkMilestones();
+fetchPartner();
 loadWeather();
 loadSun();
 syncNow(false);

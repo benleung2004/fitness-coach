@@ -9,7 +9,9 @@
 gh api repos/benleung2004/fitness-data/contents/data/fitness.json -H "Accept: application/vnd.github.raw" > logs/fitness-log-$(date +%F).json
 ```
 
-如果失敗（例如未開同步），就叫用戶用手機「匯出俾 Claude」再放入 `logs/`。**唔好改 `fitness-data` 入面嘅資料**，嗰度只係俾手機寫。
+如果失敗（例如未開同步），就叫用戶用手機「匯出俾 Claude」再放入 `logs/`。
+
+**女朋友頁面**（`her/`，同一套程式，`window.FC_USER = 'her'`）：資料喺 `data/her.json`，食物相喺 `meals-her/<日期>/`。攞落 `logs/her-log-$(date +%F).json`。佢嘅計劃設定喺 `js/config.js` 最尾 `if (window.FC_USER === 'her')` 嗰段（減脂目標、佢嘅班次 A／SA／Day／P／N、帶氧 20 分鐘）。佢嘅身高、體重、體脂唔好寫入 code（公開 repo）。分析佢嘅 log 時，原則同下面「唔可以改嘅原則」唔同：佢目標係減脂，可以建議輕微熱量赤字。**唔好改 `fitness-data` 入面嘅資料**，嗰度只係俾手機寫。
 
 ### 食物相
 JSON 嘅 `meals`（`id`、`date`、`slot` 早／午／晚／小食、`note`、`up` 有冇上載、`path`）。相喺私人 repo 嘅 `meals/<日期>/<id>.jpg`。下載最近 7 日嘅相落 `logs/meals/`（**唔好上載、唔好 commit**）：
@@ -55,6 +57,8 @@ done
 - 女朋友一齊郁（佢嘅班次時間、得閒時段計法、活動建議）→ `js/config.js` 嘅 `gfShifts`、`together`；邏輯 → `togetherWindow()`
 - 通勤（行／踩分鐘、地圖起點）→ `js/config.js` 嘅 `commute`；判斷邏輯 → `commuteAdvice()`
 - 加重邏輯 → `js/app.js` 嘅 `progression()`
+- 兩個人互睇（👫 對方分頁）→ `vPartner()`、`fetchPartner()`；對方班表自動讀取 → `partnerShift()`；一齊做 = workout／activity 嘅 `together: true`
+- gym 帶氧／熱身可揀機 → `gymExtras.cardioChoices`、`warmupChoices`；換同部位動作 → `swapOptions()`（按 `library.js` 嘅 `group`）
 
 ## 唔可以改嘅原則（來自原本 brief）
 - 新手、以「持續」為主要成功指標，唔係減重或者健美
