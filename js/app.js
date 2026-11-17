@@ -1279,7 +1279,7 @@ const rpeOpts = ['', 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
 // 換動作：同一部位、仲未開始做先可以換
 function swapOptions(key) {
   const g = (L.items[key] || {}).group;
-  return Object.keys(C.exercises).filter(k => k !== key && L.items[k] && L.items[k].group === g && C.exercises[k].unit !== 'bw');
+  return Object.keys(C.exercises).filter(k => k !== key && L.items[k] && L.items[k].group === g && C.exercises[k].unit !== 'bw' && !C.exercises[k].noMachine);
 }
 function swapSelect(it, i) {
   if (it.sets.some(x => x.done)) return '';

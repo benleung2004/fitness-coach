@@ -4,7 +4,7 @@
 // 改完記得將 sw.js 入面嘅 CACHE_VERSION 加 1，手機先會攞到新版。
 // =============================================================
 window.CONFIG = {
-  version: '1.9.0',
+  version: '1.9.1',
 
   // ---------- 每週 / 每日目標 ----------
   targets: {
@@ -41,7 +41,8 @@ window.CONFIG = {
     legPress:   { name: '腿推機 Leg Press', type: 'compound', unit: 'kg', inc: 5, rest: '90–120 秒',
                   cue: '腳掌成個踩實，膝頭跟住腳尖方向；落到大約 90 度，推返上去唔好鎖死膝頭。',
                   sub: '高腳杯深蹲 Goblet Squat／徒手分腿蹲', avoid: ['knee'], painSub: { knee: 'gluteBridge' } },
-    row:        { name: '坐姿划船（鋼索）Seated Cable Row', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
+    row:        { noMachine: true, // chocoZAP 太和搵唔到：計劃已經改用 reverseFly／latPulldown
+                  name: '坐姿划船（鋼索）Seated Cable Row', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
                   cue: '鋼索滑輪機兩邊滑輪調到最低，坐喺訓練椅；挺胸，先夾背，再用手肘拉向肚臍；唔好用腰向後拗。',
                   sub: '企姿單手鋼索划船：滑輪調到胸口高度，企定一隻腳踏前，一次拉一邊（唔使啞鈴）', avoid: [], painSub: {} },
     chestPress: { name: '器械胸推 Machine Chest Press', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
@@ -49,7 +50,7 @@ window.CONFIG = {
                   sub: '啞鈴臥推／跪地掌上壓', avoid: ['shoulder'], painSub: { shoulder: null } },
     latPulldown:{ name: '滑輪下拉（鋼索）Cable Pulldown', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
                   cue: '鋼索滑輪機兩邊滑輪調到最高，跪低或者坐喺訓練椅；手肘向下向後，將手柄拉到胸口兩側；身體唔好大幅向後瞓。',
-                  sub: '單手鋼索下拉（一次一邊）', avoid: ['shoulder'], painSub: { shoulder: 'row' } },
+                  sub: '單手鋼索下拉（一次一邊）', avoid: ['shoulder'], painSub: { shoulder: null } },
     latRaise:   { name: '啞鈴側平舉 Lateral Raise', type: 'isolation', unit: 'kg', inc: 1, rest: '60–90 秒',
                   cue: '手肘微彎，舉到膊頭高度就夠；放落要慢，唔好聳膊。',
                   sub: '器械側平舉／彈力帶側平舉', avoid: ['shoulder'], painSub: { shoulder: null } },
@@ -107,7 +108,7 @@ window.CONFIG = {
   workouts: {
     gymA: { name: 'Gym A 日（全身）', phase: 1, exercises: [
       { key: 'legPress', sets: 2, reps: [10, 12] },
-      { key: 'row', sets: 2, reps: [10, 12] },
+      { key: 'reverseFly', sets: 2, reps: [12, 15] },
       { key: 'chestPress', sets: 2, reps: [10, 12] },
       { key: 'latPulldown', sets: 2, reps: [10, 12] },
       { key: 'latRaise', sets: 2, reps: [12, 15] },
@@ -115,13 +116,13 @@ window.CONFIG = {
     gymB: { name: 'Gym B 日（全身）', phase: 1, exercises: [
       { key: 'legExt', sets: 2, reps: [10, 12] },
       { key: 'legCurl', sets: 2, reps: [10, 12] },
-      { key: 'row', sets: 2, reps: [10, 12] },
+      { key: 'latPulldown', sets: 2, reps: [10, 12] },
       { key: 'shoulderPress', sets: 2, reps: [10, 12] },
       { key: 'chestFly', sets: 2, reps: [12, 15] },
       { key: 'backExt', sets: 2, reps: [12, 15] } ] },
     d1: { name: '全身 Day 1', phase: 2, exercises: [
       { key: 'backExt', sets: 3, reps: [10, 14] },
-      { key: 'row', sets: 3, reps: [10, 12] },
+      { key: 'latPulldown', sets: 3, reps: [10, 12] },
       { key: 'dbBench', sets: 3, reps: [10, 12] },
       { key: 'latRaise', sets: 3, reps: [12, 15] },
       { key: 'legExt', sets: 3, reps: [10, 14] },
@@ -352,5 +353,11 @@ if (window.FC_USER === 'her') (function (C) {
     easy:   Object.assign({}, C.gymExtras.cardio.easy, { minutes: 10, title: '輕鬆踩 10 分鐘' })
   } });
   C.nutritionGoal = '減脂飲食：每餐一個手掌份量蛋白質（每日大約 70–90g）、半碟菜、飯半碗；飲品走甜。唔使捱餓，慢慢減先唔會反彈。';
+  // 同男朋友一齊去 gym 時唔好撞機：每個位置都用唔同嘅機
+  // （佢 A：腿推、夾胸機反向、胸推、鋼索、啞鈴、腹背機；佢 B：腿伸／彎、鋼索、肩推、夾胸機、腹背機）
+  const reorder = (w, keys) => { const ex = C.workouts[w].exercises; C.workouts[w] = Object.assign({}, C.workouts[w], { exercises: keys.map(k => ex.find(e => e.key === k)).filter(Boolean).concat(ex.filter(e => !keys.includes(e.key))) }); };
+  reorder('gymA', ['latPulldown', 'latRaise', 'legPress', 'reverseFly', 'abMachine', 'chestPress']);
+  reorder('gymB', ['shoulderPress', 'latPulldown', 'legExt', 'legCurl', 'backExt', 'chestFly']);
+  ['d1', 'd2', 'd3'].forEach(w => { const ex = C.workouts[w].exercises, h = Math.floor(ex.length / 2); reorder(w, ex.slice(h).concat(ex.slice(0, h)).map(e => e.key)); });
   C.milestones = C.milestones.filter(m => !/commute/i.test(m.id));
 })(window.CONFIG);
