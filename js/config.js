@@ -4,7 +4,7 @@
 // 改完記得將 sw.js 入面嘅 CACHE_VERSION 加 1，手機先會攞到新版。
 // =============================================================
 window.CONFIG = {
-  version: '1.11.1',
+  version: '1.12.0',
 
   // ---------- 每週 / 每日目標 ----------
   targets: {
@@ -255,6 +255,36 @@ window.CONFIG = {
   },
 
   // ---------- 飲食 ----------
+  // ---------- 肌肉酸痛圖（今日邊度酸）----------
+  sore: {
+    regions: {
+      shoulders: '膊頭（前／側）', chest: '胸', biceps: '二頭肌', forearm: '前臂', abs: '腹', obliques: '側腹', quads: '大腿前',
+      traps: '上背（斜方肌）', rearDelt: '膊頭後', triceps: '三頭肌', lats: '背闊肌／中背', lowerBack: '下背', glutes: '臀', hamstrings: '大腿後', calves: '小腿'
+    },
+    // 每個動作主要練到邊度（用嚟對比酸嘅位）
+    map: {
+      legPress: ['quads', 'glutes', 'hamstrings'], legExt: ['quads'], legCurl: ['hamstrings'], gluteBridge: ['glutes', 'hamstrings'],
+      gobletSquat: ['quads', 'glutes'], bwSquat: ['quads', 'glutes'], splitSquat: ['quads', 'glutes'],
+      row: ['lats', 'traps', 'rearDelt', 'biceps'], latPulldown: ['lats', 'biceps'], dbRow: ['lats', 'traps', 'biceps'],
+      backExt: ['lowerBack', 'glutes', 'hamstrings'], abMachine: ['abs'], plank: ['abs', 'obliques'], crunch: ['abs'], deadBug: ['abs', 'obliques'],
+      chestPress: ['chest', 'shoulders', 'triceps'], dbBench: ['chest', 'shoulders', 'triceps'], pushup: ['chest', 'shoulders', 'triceps'], chestFly: ['chest'],
+      latRaise: ['shoulders'], shoulderPress: ['shoulders', 'triceps'], dbShoulderPress: ['shoulders', 'triceps'],
+      reverseFly: ['rearDelt', 'traps'], facePull: ['rearDelt', 'traps'],
+      dbCurl: ['biceps', 'forearm'], cableCurl: ['biceps', 'forearm'], pushdown: ['triceps'], ohTriceps: ['triceps']
+    },
+    // 活動都會令啲位酸
+    actMap: { walk: ['calves'], run: ['calves', 'quads'], hike: ['calves', 'quads', 'glutes'], cycle: ['quads'], badminton: ['calves', 'shoulders'] },
+    // 冇練過都酸：可能借錯力
+    hints: {
+      lowerBack: '下背酸：腿推時腰要貼實椅背；背伸展唔好向後拗過頭。酸痛持續或者係刺痛，就停相關動作。',
+      traps: '上背／頸酸：下拉、划船、肩推時膊頭沉低，唔好聳膊；返工坐耐都會令呢度繃緊。',
+      forearm: '前臂酸：下拉、划船唔好揸得太實，諗住用手肘拉。',
+      shoulders: '膊頭酸但冇練膊頭：胸推時手肘唔好打得太開（大約 45 度）。',
+      calves: '小腿酸：多數係行路、企得耐或者跑步，正常。',
+      quads: '大腿前酸：可能係踩單車、行山或者落樓梯，正常。'
+    }
+  },
+
   nutrition: {
     proteinFoods: ['雞蛋', '雞胸／雞髀', '魚', '豆腐', '牛肉', '無糖乳酪', '牛奶／高鈣豆漿'],
     drinkSwaps: [

@@ -73,6 +73,8 @@ function mergeData(R) {
     if (mkR.makeupUpd) { S.days[d].noMakeup = !!mkR.noMakeup; S.days[d].makeupUpd = mkR.makeupUpd; }
     const hR = ((r.health || {}).at || 0) > ((l.health || {}).at || 0) ? r.health : l.health;
     if (hR) S.days[d].health = hR;
+    const sR = ((r.sore || {}).at || 0) > ((l.sore || {}).at || 0) ? r.sore : l.sore;
+    if (sR) S.days[d].sore = sR;
   });
   if (R.profile && ((!S.profile.onboarded && R.profile.onboarded) || (R.profile.upd || 0) > (S.profile.upd || 0))) S.profile = R.profile;
   Object.entries(R.achieved || {}).forEach(([k, v]) => { if (!S.achieved[k] || v < S.achieved[k]) S.achieved[k] = v; });
@@ -1076,7 +1078,7 @@ function vToday() {
   let safety = '';
   if (syncReady() && SY.lastError) safety = `<div class="card"><b>☁️ 同步有問題</b><p class="small muted">${esc(SY.lastError)}。紀錄仍然安全存喺呢部機。</p><button class="btn sm ghost" data-act="openSettings">去設定</button></div>`;
   else if (!syncReady() && (S.workouts.length || S.activities.length) && (!S.lastBackup || diffDays(S.lastBackup, today()) >= 7)) safety = `<div class="card"><b>💾 一個禮拜冇備份</b><p class="small muted">開咗同步就唔使理呢個；未開就撳一下匯出備份（存去 iCloud 雲碟或者 AirDrop 去 Mac）。</p><div class="row"><button class="btn sm" data-act="backupNow">一撳備份</button><button class="btn sm ghost" data-act="openSettings">設定同步</button></div></div>`;
-  return `${review}${safety}${main}${insCard}${vPlanCard()}
+  return `${review}${safety}${main}${soreCard()}${insCard}${vPlanCard()}
   <div class="grid2" style="margin-bottom:12px">
     <button class="btn blue" data-act="dunno">🤷 唔知今日做咩</button>
     <button class="btn ghost" data-act="lowMode">🌙 好攰／夜更模式</button>
@@ -1931,6 +1933,8 @@ function summaryText() {
   w.forEach(x => lines.push(`| ${x.weekStart} | ${x.gym} | ${x.cardio} | ${x.avgSteps ?? '-'} | ${x.avgSleep ?? '-'} | ${x.avgWaterL ?? '-'} | ${x.avgWeight ?? '-'} | ${x.adherence}% |`));
   const ml = (S.meals || []).filter(m => m.date >= addDays(today(), -2) && m.note && !(S.deleted || {})[m.id]).sort((a, b) => a.at - b.at);
   if (ml.length) { lines.push('', '## 最近 3 日食咗咩'); ml.forEach(m => lines.push(`- ${m.date} ${MEAL_SLOTS[m.slot] || ''}：${m.note}${m.text ? '' : '（有相）'}`)); }
+  const so = Object.entries(S.days).filter(([d, v]) => v.sore && d >= addDays(today(), -13) && Object.keys(v.sore.r || {}).length).sort();
+  if (so.length) { lines.push('', '## 最近酸痛'); so.forEach(([d, v]) => lines.push(`- ${d}：${Object.entries(v.sore.r).map(([k, n]) => SORE[k] + (n >= 2 ? '（好酸）' : '')).join('、')}`)); }
   lines.push('', '## 最近訓練');
   recent.forEach(r => {
     lines.push(`- ${r.date} ${workoutName(r)}${r.minutes ? ` ${r.minutes}分鐘` : ''}${r.pain && r.pain !== 'none' ? ` 痛:${PAIN[r.pain]}` : ''}`);
@@ -1990,6 +1994,84 @@ function beep() {
 }
 
 // ---------- 彈出 / 提示 ----------
+// ---------- 今日邊度酸（2D 前面／背面人體圖） ----------
+const SORE = C.sore.regions;
+// 每個位：[key, SVG 形狀]；左右兩邊同一個 key
+const BODY = {
+  front: [
+    ['shoulders', '<ellipse cx="62" cy="74" rx="14" ry="12"/><ellipse cx="138" cy="74" rx="14" ry="12"/>'],
+    ['chest', '<rect x="72" y="64" width="27" height="36" rx="9"/><rect x="101" y="64" width="27" height="36" rx="9"/>'],
+    ['biceps', '<rect x="45" y="88" width="16" height="42" rx="8"/><rect x="139" y="88" width="16" height="42" rx="8"/>'],
+    ['forearm', '<rect x="39" y="134" width="15" height="46" rx="7"/><rect x="146" y="134" width="15" height="46" rx="7"/>'],
+    ['abs', '<rect x="84" y="104" width="32" height="66" rx="7"/>'],
+    ['obliques', '<rect x="71" y="104" width="11" height="60" rx="5"/><rect x="118" y="104" width="11" height="60" rx="5"/>'],
+    ['quads', '<rect x="72" y="198" width="26" height="88" rx="12"/><rect x="102" y="198" width="26" height="88" rx="12"/>']
+  ],
+  back: [
+    ['traps', '<polygon points="100,50 128,66 118,94 100,104 82,94 72,66"/>'],
+    ['rearDelt', '<ellipse cx="62" cy="74" rx="14" ry="12"/><ellipse cx="138" cy="74" rx="14" ry="12"/>'],
+    ['triceps', '<rect x="45" y="88" width="16" height="42" rx="8"/><rect x="139" y="88" width="16" height="42" rx="8"/>'],
+    ['forearm', '<rect x="39" y="134" width="15" height="46" rx="7"/><rect x="146" y="134" width="15" height="46" rx="7"/>'],
+    ['lats', '<polygon points="72,88 97,106 97,150 82,150 71,122"/><polygon points="128,88 103,106 103,150 118,150 129,122"/>'],
+    ['lowerBack', '<rect x="80" y="153" width="40" height="24" rx="6"/>'],
+    ['glutes', '<ellipse cx="86" cy="196" rx="15" ry="17"/><ellipse cx="114" cy="196" rx="15" ry="17"/>'],
+    ['hamstrings', '<rect x="72" y="216" width="26" height="72" rx="12"/><rect x="102" y="216" width="26" height="72" rx="12"/>'],
+    ['calves', '<ellipse cx="86" cy="330" rx="11" ry="28"/><ellipse cx="114" cy="330" rx="11" ry="28"/>']
+  ]
+};
+const BODY_BASE = {
+  front: '<circle cx="100" cy="30" r="18"/><rect x="92" y="46" width="16" height="14" rx="4"/><circle cx="46" cy="192" r="8"/><circle cx="154" cy="192" r="8"/><rect x="72" y="172" width="56" height="24" rx="8"/><circle cx="85" cy="294" r="9"/><circle cx="115" cy="294" r="9"/><rect x="77" y="304" width="16" height="62" rx="8"/><rect x="107" y="304" width="16" height="62" rx="8"/><ellipse cx="84" cy="374" rx="10" ry="6"/><ellipse cx="116" cy="374" rx="10" ry="6"/>',
+  back: '<circle cx="100" cy="30" r="18"/><rect x="92" y="46" width="16" height="10" rx="4"/><circle cx="46" cy="192" r="8"/><circle cx="154" cy="192" r="8"/><circle cx="85" cy="294" r="8"/><circle cx="115" cy="294" r="8"/><ellipse cx="84" cy="372" rx="10" ry="6"/><ellipse cx="116" cy="372" rx="10" ry="6"/>'
+};
+function bodySvg(side, lv) {
+  return `<svg viewBox="0 0 200 384" class="body-svg" role="img" aria-label="${side === 'front' ? '前面' : '背面'}">
+    <g class="body-base">${BODY_BASE[side]}</g>
+    ${BODY[side].map(([k, shp]) => `<g class="body-part lv${lv[k] || 0}" data-act="soreTap" data-k="${k}"><title>${esc(SORE[k])}</title>${shp}</g>`).join('')}
+  </svg>`;
+}
+// 最近 3 日（酸通常喺訓練後 1–3 日出現）練過／郁過嘅位
+function recentTrained(d = today()) {
+  const from = addDays(d, -3), out = {};
+  S.workouts.filter(w => w.date >= from && w.date <= d).forEach(w => (w.exercises || []).forEach(e => {
+    if (!e.sets.some(x => x.done)) return;
+    (C.sore.map[e.key] || []).forEach(k => { (out[k] = out[k] || new Set()).add(C.exercises[e.key] ? C.exercises[e.key].name : e.key); });
+  }));
+  S.activities.filter(a => a.date >= from && a.date <= d && a.minutes >= 30).forEach(a => (C.sore.actMap[a.kind] || []).forEach(k => { (out[k] = out[k] || new Set()).add(ACT_KINDS[a.kind]); }));
+  return out;
+}
+function soreAnalysis(d = today()) {
+  const sr = (S.days[d] || {}).sore;
+  const lv = (sr && sr.r) || {};
+  const keys = Object.keys(lv).filter(k => lv[k] > 0);
+  if (!keys.length) return null;
+  const tr = recentTrained(d), lines = [];
+  const hit = keys.filter(k => tr[k]), miss = keys.filter(k => !tr[k]);
+  if (hit.length) lines.push(`✅ 練到目標肌肉：${hit.map(k => `${SORE[k]}（${[...tr[k]].slice(0, 2).join('、')}）`).join('，')}。正常，代表有刺激到。`);
+  miss.forEach(k => lines.push(`⚠️ ${SORE[k]}：最近 3 日冇練呢度都酸。${C.sore.hints[k] || '可能係返工姿勢、搬嘢，或者某個動作借錯力；記住係邊個動作之後開始酸。'}`));
+  const heavy = keys.filter(k => lv[k] >= 2);
+  if (heavy.length) lines.push(`💤 好酸：${heavy.map(k => SORE[k]).join('、')}。今日練到呢啲位就做輕啲（少 1 組或者減 10% 重量），或者行路、伸展幫恢復。`);
+  return { keys, lv, lines };
+}
+function soreCard() {
+  if (!S.profile.onboarded) return '';
+  const a = soreAnalysis();
+  if (!a) return `<div class="card"><div class="row between"><div><b>💢 今日邊度酸？</b><div class="small muted">可選：揀咗就知自己練得啱唔啱</div></div><button class="btn sm ghost" data-act="openSore">揀位置</button></div></div>`;
+  return `<div class="card"><div class="row between"><h2>💢 今日酸痛</h2><button class="btn sm ghost" data-act="openSore">更新</button></div>
+    <p class="small">${a.keys.map(k => `<span class="chip ${a.lv[k] >= 2 ? 'warn' : ''}">${esc(SORE[k])}${a.lv[k] >= 2 ? ' 好酸' : ''}</span>`).join(' ')}</p>
+    ${a.lines.map(l => `<p class="small">${esc(l)}</p>`).join('')}
+    <p class="small muted">「酸」係肌肉，一般 1–3 日會好；關節「痛」就要停相關動作，喺每日問答揀「痛」。唔酸唔代表冇效。</p></div>`;
+}
+function soreModal() {
+  const d = UI.sore;
+  modal(`<h2>💢 今日邊度酸？</h2>
+    <p class="small muted">撳一下 = 有啲酸（橙）、兩下 = 好酸（紅）、三下 = 取消。</p>
+    <div class="seg" style="grid-template-columns:1fr 1fr;margin-bottom:8px"><button class="seg-b ${d.side === 'front' ? 'on' : ''}" data-act="soreSide" data-s="front">前面</button><button class="seg-b ${d.side === 'back' ? 'on' : ''}" data-act="soreSide" data-s="back">背面</button></div>
+    <div class="body-wrap">${bodySvg(d.side, d.r)}</div>
+    <p class="small" id="soreSel">${soreSelText(d.r)}</p>
+    <div class="grid2"><button class="btn ghost" data-act="soreClear">清除</button><button class="btn" data-act="soreSave">✅ 確認儲存</button></div>
+    <div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">取消</button>`);
+}
+const soreSelText = r => { const k = Object.keys(r).filter(x => r[x] > 0); return k.length ? '已揀：' + k.map(x => esc(SORE[x]) + (r[x] >= 2 ? '（好酸）' : '')).join('、') : '未揀（全身都唔酸就唔使填）'; };
 function modal(html) { $('#modalBox').innerHTML = html; $('#modal').classList.remove('hidden'); }
 function closeModal() { $('#modal').classList.add('hidden'); $('#modalBox').innerHTML = ''; }
 let toastT;
@@ -2170,6 +2252,17 @@ const actions = {
     await syncNow(false);
     if (UI.tab === 'food') render();
     toast(SY.lastError ? '⚠️ 同步失敗：' + SY.lastError + '（有網會再試）' : '☁️ 已同步，Claude 收到');
+  },
+  openSore() { const sr = (day().sore || {}).r || {}; UI.sore = { side: 'front', r: Object.assign({}, sr) }; soreModal(); },
+  soreSide(el) { UI.sore.side = el.dataset.s; soreModal(); },
+  soreTap(el) {
+    const k = el.dataset.k, r = UI.sore.r; r[k] = ((r[k] || 0) + 1) % 3; if (!r[k]) delete r[k];
+    el.setAttribute('class', `body-part lv${r[k] || 0}`); $('#soreSel').innerHTML = soreSelText(r);
+  },
+  soreClear() { UI.sore.r = {}; soreModal(); },
+  soreSave() {
+    day().sore = { r: UI.sore.r, at: Date.now() };
+    save(); closeModal(); render(); toast(Object.keys(UI.sore.r).length ? '已記錄，睇吓下面分析 💢' : '已清除');
   },
   mealProtein(el) {
     const m = (S.meals || []).find(x => x.id === el.dataset.id); if (!m) return;

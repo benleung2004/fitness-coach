@@ -206,3 +206,12 @@ a.btn { text-decoration: none; }
 .sync-pill.syncing, .sync-pill.pending { color: var(--warn); }
 .sync-pill.ok { color: var(--accent); }
 .sync-pill.err { color: var(--danger); }
+
+/* 今日邊度酸：人體圖 */
+.body-wrap { display: flex; justify-content: center; margin: 4px 0 8px; }
+.body-svg { width: 100%; max-width: 230px; height: auto; }
+.body-base { fill: var(--line); }
+.body-part { cursor: pointer; stroke: var(--bg); stroke-width: 1.5; }
+.body-part.lv0 { fill: #3a4a5c; }
+.body-part.lv1 { fill: #f0a640; }
+.body-part.lv2 { fill: #e5484d; }
