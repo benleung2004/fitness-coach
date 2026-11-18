@@ -58,6 +58,8 @@ done
 - 通勤（行／踩分鐘、地圖起點）→ `js/config.js` 嘅 `commute`；判斷邏輯 → `commuteAdvice()`
 - 加重邏輯 → `js/app.js` 嘅 `progression()`
 - 兩個人互睇（👫 對方分頁）→ `vPartner()`、`fetchPartner()`；對方班表自動讀取 → `partnerShift()`；一齊做 = workout／activity 嘅 `together: true`
+- 休息後重排：`planDays()` 用 `gymGoal()`（週一嗰日 `days[週一].noMakeup` = 揀咗「唔使補」→ 本週 gym 目標降到 `gymMin`），本週帶氧按仲差分鐘分落帶氧日（`p.min`）；提示卡 → `replanBox()`
+- 活動速度／卡路里：`actEstimate()`（MET × 最近體重 × 鐘數；activity 存 `kmh`、`kcal`，只係估算）；`weeklySummaries` 有 `actKcal`
 - gym 帶氧／熱身可揀機 → `gymExtras.cardioChoices`、`warmupChoices`；換同部位動作 → `swapOptions()`（按 `library.js` 嘅 `group`）
 
 ## 唔可以改嘅原則（來自原本 brief）
