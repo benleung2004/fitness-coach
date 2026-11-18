@@ -1799,6 +1799,15 @@ function filterLibrary() {
 }
 
 // ---------- 飲食頁 ----------
+// 食物文字估有冇蛋白質（關鍵字，只係大概；冇字嘅相留俾 Claude 判斷）
+const PROTEIN_NOT = /奶茶|雞尾|豬仔包|牛角|牛油|豬油|蛋撻|雞蛋仔|蛋糕|蛋卷|蛋散|雞精/g;
+const PROTEIN_YES = /雞|豬|牛|魚|蝦|蟹|蛋|豆腐|豆漿|豆乾|乳酪|鮮奶|芝士|肉|叉燒|鴨|鵝|羊|排骨|火腿|腸|扒|吞拿|帶子|魷|蜆|蠔|whey|protein/i;
+const mealProtein = note => note ? PROTEIN_YES.test(note.replace(PROTEIN_NOT, '')) : null;
+// 有蛋白質嘅餐自動剔「蛋白質」格（最多 3 格，手動剔多咗唔會減）
+function syncProtein(d, down) {
+  const x = day(d), n = Math.min(3, (S.meals || []).filter(m => m.date === d && m.protein === true).length);
+  x.protein = down ? Math.min(x.protein || 0, n) : Math.max(x.protein || 0, n);
+}
 function vFood() {
   const x = day();
   const tgt = waterTarget();
@@ -1815,7 +1824,8 @@ function vFood() {
     <div class="grid2"><button class="btn" data-act="saveMealText">✅ 確認記錄（冇相都得）</button><label class="btn">📸 影相／揀相<input type="file" accept="image/*" id="mealFile" class="hidden"></label></div>
     <p class="small muted" style="margin:6px 0 0">撳「確認記錄」或者影相先會儲存；下面見到「☁️」就代表 Claude 收到。</p>
     ${meals.length ? meals.map(m => `<div class="list-item" style="align-items:center">${m.text ? '<div class="mealph">📝</div>' : `<img class="mealph" data-meal="${m.id}" alt="">`}
-      <div class="grow"><b>${esc(MEAL_SLOTS[m.slot] || '')}</b>${m.note ? ` <span class="small">${esc(m.note)}</span>` : ''}<div class="small muted">${status(m)}</div></div>
+      <div class="grow"><b>${esc(MEAL_SLOTS[m.slot] || '')}</b>${m.note ? ` <span class="small">${esc(m.note)}</span>` : ''}<div class="small muted">${status(m)}</div>
+      <button class="chip" data-act="mealProtein" data-id="${m.id}" style="margin-top:4px;border:0;cursor:pointer">${m.protein === true ? '🍳 有蛋白質' : m.protein === false ? '⚪ 冇乜蛋白質' : '❓ 等 Claude 判斷'}</button></div>
       <button class="btn sm ghost" data-act="delMeal" data-id="${m.id}">刪除</button></div>`).join('') : '<p class="small muted" style="margin-top:8px">今日未有食物相。</p>'}
     ${syncReady() ? '' : '<p class="small" style="color:var(--warn)">要喺 ⚙︎ 設定開「多裝置同步」，相先會上載俾 Claude 睇。</p>'}
   </div>
@@ -1829,7 +1839,8 @@ function vFood() {
   <div class="card"><h2>🍳 蛋白質（每餐一份）</h2>
     <p class="small muted">唔使計卡路里。每餐有一份掌心大嘅蛋白質就得：${N.proteinFoods.map(esc).join('、')}。</p>
     <div class="grid3">${[1, 2, 3].map(n => `<button class="check ${x.protein >= n ? 'on' : ''}" data-act="protein" data-n="${n}"><span class="ic">${['🌅', '☀️', '🌙'][n - 1]}</span>${['第 1 餐', '第 2 餐', '第 3 餐'][n - 1]}</button>`).join('')}</div>
-    <p class="small muted" style="margin-top:8px">${esc(N.shakeNote)}</p></div>
+    <p class="small muted" style="margin-top:8px">記食物時寫低食咗咩，會自動估有冇蛋白質同幫你剔格；估錯可以撳食物下面個掣改。只影相冇寫字，就等 Claude 睇相判斷。</p>
+    <p class="small muted">${esc(N.shakeNote)}</p></div>
   <div class="card"><h2>🥤 飲品換一換</h2>${N.drinkSwaps.map(([a, b]) => `<div class="list-item"><span>${esc(a)}</span><span>→ <b>${esc(b)}</b></span></div>`).join('')}</div>
   <div class="card"><h2>🍜 出街食點揀</h2>${N.eatingOut.map(e => `<div class="list-item"><div><b>${esc(e.place)}</b><div class="small">${esc(e.tip)}</div></div></div>`).join('')}
     <p class="small muted">每餐盡量加一份菜：叫「多菜」、加一碟油菜（走油），或者揀有菜嘅套餐。</p></div>
@@ -2151,14 +2162,20 @@ const actions = {
   async saveMealText() {
     const note = ($('#mealNote').value || '').trim().slice(0, 200);
     if (!note) { toast('先寫低食咗咩'); return; }
-    const m = { id: uid(), date: today(), at: Date.now(), slot: UI.mealSlot || mealSlotNow(), note, text: true, up: false, upd: Date.now() };
-    (S.meals = S.meals || []).push(m);
+    const m = { id: uid(), date: today(), at: Date.now(), slot: UI.mealSlot || mealSlotNow(), note, text: true, up: false, upd: Date.now(), protein: mealProtein(note) };
+    (S.meals = S.meals || []).push(m); syncProtein(m.date);
     UI.mealDraft = ''; UI.mealSlot = null; save(); render();
     if (!syncReady()) { toast('✅ 已記錄（只喺呢部機，開同步先會俾 Claude）'); return; }
     toast('✅ 已記錄，同步緊…');
     await syncNow(false);
     if (UI.tab === 'food') render();
     toast(SY.lastError ? '⚠️ 同步失敗：' + SY.lastError + '（有網會再試）' : '☁️ 已同步，Claude 收到');
+  },
+  mealProtein(el) {
+    const m = (S.meals || []).find(x => x.id === el.dataset.id); if (!m) return;
+    m.protein = m.protein !== true; m.upd = Date.now();
+    syncProtein(m.date, !m.protein); save(); render();
+    toast(m.protein ? '已改：呢餐有蛋白質 🍳' : '已改：呢餐冇乜蛋白質');
   },
   async delMeal(el) {
     const m = (S.meals || []).find(x => x.id === el.dataset.id);
@@ -2283,7 +2300,8 @@ document.addEventListener('change', async e => {
       const m = { id: uid(), date: today(), at: Date.now(), slot: UI.mealSlot || mealSlotNow(), note: ($('#mealNote') || {}).value ? $('#mealNote').value.trim().slice(0, 200) : '', up: false, upd: Date.now() };
       UI.mealDraft = '';
       await photoTx('readwrite', st => st.put({ id: m.id, kind: 'meal', date: m.date, blob }));
-      (S.meals = S.meals || []).push(m);
+      m.protein = mealProtein(m.note);
+      (S.meals = S.meals || []).push(m); syncProtein(m.date);
       UI.mealSlot = null; save(); render();
       toast(syncReady() ? '📸 已記錄，上載緊…' : '📸 已記錄（只喺呢部機）');
       uploadMeals();

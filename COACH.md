@@ -14,7 +14,7 @@ gh api repos/benleung2004/fitness-data/contents/data/fitness.json -H "Accept: ap
 **女朋友頁面**（`her/`，同一套程式，`window.FC_USER = 'her'`）：資料喺 `data/her.json`，食物相喺 `meals-her/<日期>/`。攞落 `logs/her-log-$(date +%F).json`。佢嘅計劃設定喺 `js/config.js` 最尾 `if (window.FC_USER === 'her')` 嗰段（減脂目標、佢嘅班次 A／SA／Day／P／N、帶氧 20 分鐘）。佢嘅身高、體重、體脂唔好寫入 code（公開 repo）。分析佢嘅 log 時，原則同下面「唔可以改嘅原則」唔同：佢目標係減脂，可以建議輕微熱量赤字。**唔好改 `fitness-data` 入面嘅資料**，嗰度只係俾手機寫。
 
 ### 食物相
-JSON 嘅 `meals`（`id`、`date`、`slot` 早／午／晚／小食、`note`、`up` 有冇上載、`path`；`text: true` = 冇相、只係文字紀錄，直接睇 `note`）。相喺私人 repo 嘅 `meals/<日期>/<id>.jpg`。下載最近 7 日嘅相落 `logs/meals/`（**唔好上載、唔好 commit**）：
+JSON 嘅 `meals`（`id`、`date`、`slot` 早／午／晚／小食、`note`、`up` 有冇上載、`path`；`text: true` = 冇相、只係文字紀錄，直接睇 `note`；`protein` = App 按文字關鍵字估有冇蛋白質，`null` = 冇字嘅相，要你睇相判斷再話俾用戶知）。相喺私人 repo 嘅 `meals/<日期>/<id>.jpg`。下載最近 7 日嘅相落 `logs/meals/`（**唔好上載、唔好 commit**）：
 
 ```bash
 for d in $(seq 0 6 | xargs -I{} date -v-{}d +%F); do
