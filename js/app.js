@@ -1000,6 +1000,17 @@ function vCheckin(ci) {
   </div>`;
 }
 
+// 返工日可以踩單車返屋企，再去 gym 做精簡版（琴日做過 gym 就唔提供）
+function commuteGymBtn(rec) {
+  const ci = day().checkin;
+  if (!ci || noGym() || !C.commute || !WORK_SHIFTS.includes(ci.shift) || ci.energy === 'low') return '';
+  if (!commuteAdvice(today(), ci.shift).ok) return '';
+  const lg = lastGym();
+  if (lg && diffDays(lg.date, today()) === 1) return '';
+  const t = rec.template || nextTemplate();
+  return `<div style="height:8px"></div><button class="btn block ghost" data-act="startGym" data-t="${t}" data-mode="commute">🚲 踩返屋企 ＋ 精簡 gym（4 個動作）</button>
+    <p class="small muted">踩單車當熱身同帶氧，到 gym 直接做頭 4 個器械動作，大約 25 分鐘。</p>`;
+}
 function vRec(rec) {
   let body = '';
   if (rec.kind === 'gym') {
@@ -1014,9 +1025,9 @@ function vRec(rec) {
     }).join('')}</ul>
     ${(() => { const c = gymCardio(rec.mode); const mins = gymMinutes(list.filter(s => resolveEx(s.key, pain).key).map(s => ({ key: s.key, n: setsFor(s, rec.template, rec.mode) })), c);
       return `<p class="small">🔥 熱身 ${C.gymExtras.warmup.minutes} 分鐘 → 🏋️ 器械 → 🏃 ${esc(c.title)}</p><p class="small muted">預計大約 ${mins} 分鐘</p>`; })()}
-    <button class="btn block" data-act="startGym" data-t="${rec.template}" data-mode="${rec.mode}">開始訓練</button>`;
+    <button class="btn block" data-act="startGym" data-t="${rec.template}" data-mode="${rec.mode}">開始訓練</button>${commuteGymBtn(rec)}`;
   } else if (rec.kind === 'cardio') {
-    body = `<button class="btn block" data-act="logAct" data-kind="${rec.cardioKind}" data-min="${rec.minutes}">做完，記錄 ${rec.minutes} 分鐘</button>`;
+    body = `<button class="btn block" data-act="logAct" data-kind="${rec.cardioKind}" data-min="${rec.minutes}">做完，記錄 ${rec.minutes} 分鐘</button>${commuteGymBtn(rec)}`;
   } else if (rec.kind === 'recovery') {
     body = `<ul class="clean">${C.recovery.steps.map((s, i) => `<li>${exLink(C.recovery.keys[i], esc(s))}</li>`).join('')}</ul>
     <button class="btn block" data-act="logRecovery">完成恢復</button>`;
@@ -1249,7 +1260,7 @@ function vTrain() {
         <button class="btn sm ghost" data-act="delWorkout" data-id="${w.id}">刪除</button></div>`).join('') : '<p class="muted">未有紀錄。第一次永遠最難，做完就係贏咗。</p>'}
     </div>`;
 }
-const workoutName = w => (C.workouts[w.type] ? C.workouts[w.type].name : { home: '屋企循環', recovery: '恢復' }[w.type] || w.type) + (w.mode === 'return' ? '（回歸）' : w.mode === 'short' ? '（精簡）' : '');
+const workoutName = w => (C.workouts[w.type] ? C.workouts[w.type].name : { home: '屋企循環', recovery: '恢復' }[w.type] || w.type) + (w.mode === 'return' ? '（回歸）' : w.mode === 'short' ? '（精簡）' : w.mode === 'commute' ? '（踩返屋企＋精簡）' : '');
 
 // 組數：基本跟計劃；有 60 分鐘又唔攰嘅日子，複合動作加 1 組（第 1 階段最多 3 組，第 2 階段最多 4 組）
 function setsFor(s, t, mode, ci) {
@@ -1281,7 +1292,7 @@ function startGym(t, mode) {
   const ph = phase();
   const A = adj();
   let list = C.workouts[t].exercises.filter(s => !A.skip[s.key]);
-  if (mode === 'short') list = list.slice(0, 4);
+  if (mode === 'short' || mode === 'commute') list = list.slice(0, 4);
   const items = [];
   list.forEach(s => {
     const r = resolveEx(s.key, pain);
@@ -1295,7 +1306,7 @@ function startGym(t, mode) {
                  sets: Array.from({ length: sets }, () => ({ w: w ?? '', r: '', rpe: '', done: false })) });
   });
   S.active = { id: uid(), type: t, mode, date: today(), startedAt: Date.now(), items, pain,
-               warm: { done: false }, cardio: Object.assign({ done: false }, gymCardio(mode)) };
+               warm: mode === 'commute' ? null : { done: false }, cardio: mode === 'commute' ? null : Object.assign({ done: false }, gymCardio(mode)) };
   save(); UI.tab = 'train'; render(); window.scrollTo(0, 0);
 }
 
@@ -1311,7 +1322,7 @@ function vSession() {
     <button class="btn block" data-act="guidedOn">▶️ 引導模式（一個一個動作帶住做）</button>
     ${a.pain && a.pain !== 'none' ? `<p class="small" style="color:var(--warn)">${esc(C.painAdvice[a.pain])}</p>` : ''}
   </div>
-  ${warmCard(a)}
+  ${a.mode === 'commute' ? bikeCard(a) : ''}${warmCard(a)}
   <div class="card">${a.items.map((it, i) => {
     const ex = C.exercises[it.key];
     const prog = progression(it.key, it.reps);
@@ -1348,6 +1359,15 @@ function vSession() {
 
 const curSet = it => it.sets.findIndex(x => !x.done);
 const weightGuideHtml = open => `<details ${open ? 'open' : ''}><summary>⚖️ 點樣睇／揀重量？</summary><ul class="clean small">${C.weightGuide.map(x => `<li>${esc(x)}</li>`).join('')}</ul></details>`;
+// 踩返屋企 + 精簡 gym：踩單車當熱身同帶氧，喺「活動」紀錄度填 km／分鐘
+const commuteBike = d => S.activities.find(x => x.date === d && x.kind === 'cycle' && x.commute);
+function bikeCard(a) {
+  const b = commuteBike(a.date);
+  return `<div class="card ${b ? '' : 'hero'}"><div class="row between"><h2>🚲 踩返屋企（當熱身＋帶氧）</h2>${b ? '<span class="chip ok">✓ 已記錄</span>' : ''}</div>
+    ${b ? `<p class="small">${b.km ? b.km + ' km · ' : ''}${b.minutes} 分鐘${b.kmh ? ` · ${b.kmh} km/h` : ''}${actKcal(b) ? ` · 約 ${actKcal(b)} kcal` : ''}</p>`
+        : `<p class="small">踩完單車已經熱咗身，唔使再熱身同做 gym 帶氧，直接做 4 個器械動作。第一組用輕少少重量試。</p>
+    <button class="btn block" data-act="logAct" data-kind="cycle" data-min="${C.commute.minutes.cycle}" data-km="${C.rules.commuteKm}" data-commute="1">記錄踩單車（填 km 同分鐘）</button>`}</div>`;
+}
 function warmCard(a) {
   if (!a.warm) return '';
   return `<div class="card ${a.warm.done ? '' : 'hero'}"><div class="row between"><h2>🔥 熱身 ${C.gymExtras.warmup.minutes} 分鐘</h2>${a.warm.done ? '<span class="chip ok">✓ 完成</span>' : ''}</div>
