@@ -62,7 +62,7 @@ done
 - 踩返屋企 + 精簡 gym：workout `mode: 'commute'`（頭 4 個動作、冇熱身同 gym 帶氧，踩單車記做 `commute: true` 嘅 cycle activity）；掣 → `commuteGymBtn()`，訓練畫面卡 → `bikeCard()`
 - 活動速度／卡路里：`actEstimate()`（MET × 最近體重 × 鐘數；activity 存 `kmh`、`kcal`，只係估算）；`weeklySummaries` 有 `actKcal`
 - 今日邊度酸（2D 前面／背面人體圖）→ `days[*].sore = { r: { 部位: 1 有啲酸／2 好酸 }, at }`；部位同動作對照 → `js/config.js` 嘅 `sore`（`regions`、`map`、`actMap`、`hints`）；分析 → `soreAnalysis()`。分析 log 時：酸喺練過嘅肌肉 = 正常；冇練都酸（尤其下背、上背、前臂）= 可能借錯力，對返嗰幾日做咗咩動作
-- gym 帶氧／熱身可揀機 → `gymExtras.cardioChoices`、`warmupChoices`；換同部位動作 → `swapOptions()`（按 `library.js` 嘅 `group`）
+- gym 帶氧／熱身可揀機 → `gymExtras.cardioChoices`、`warmupChoices`；換同部位動作 → `swapOptions()`（按 `config.sore.map` 重疊部位排，主要部位要一樣；冇 map 先用 `library.js` 嘅 `group`）；訓練畫面「🧍 睇練邊度／冇呢部機？」人體圖 → `muscleModal()`、`exLv()`
 
 ## 唔可以改嘅原則（來自原本 brief）
 - 新手、以「持續」為主要成功指標，唔係減重或者健美

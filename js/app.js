@@ -1340,7 +1340,7 @@ function vSession() {
     return `<div class="ex">
       <div class="row" style="align-items:flex-start;flex-wrap:nowrap"><button class="thumbbtn" data-act="exInfo" data-k="${it.key}" aria-label="睇示範">${animHtml(it.key, 'sm')}</button>
         <div class="grow"><div class="ex-name">${exLink(it.key, esc(ex.name))}</div>${it.subFrom ? '<span class="chip warn">因痛替代</span>' : ''}
-      <div class="small muted">${it.sets.length} 組 × ${it.reps[0]}–${it.reps[1]} ${unit} · 休息 ${esc(ex.rest)}</div>${musclesOf(it.key) ? `<div class="small">💪 練：${esc(musclesOf(it.key))}</div>` : ''}</div></div>
+      <div class="small muted">${it.sets.length} 組 × ${it.reps[0]}–${it.reps[1]} ${unit} · 休息 ${esc(ex.rest)}</div>${musclesOf(it.key) ? `<div class="small">💪 練：${esc(musclesOf(it.key))}</div>` : ''}<button class="btn sm ghost" style="margin-top:4px" data-act="muscleMap" data-i="${i}">🧍 睇練邊度／冇呢部機？</button></div></div>
       ${C.workouts[a.type].exercises.find(s => s.key === it.slot && s.note) ? `<div class="small muted">${esc(C.workouts[a.type].exercises.find(s => s.key === it.slot).note)}</div>` : ''}
       <div class="sug">${esc(prog.text)}${warmupText(it.key, prog.w) ? '<br>' + esc(warmupText(it.key, prog.w)) : ''}</div>
       ${swapSelect(it, i)}
@@ -1394,9 +1394,37 @@ function cardioCard(a) {
 }
 const rpeOpts = ['', 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
 // 換動作：同一部位、仲未開始做先可以換
+// 練同樣部位嘅其他動作（gym 有嘅機／啞鈴），按重疊部位排：主要部位一樣最先
 function swapOptions(key) {
-  const g = (L.items[key] || {}).group;
-  return Object.keys(C.exercises).filter(k => k !== key && L.items[k] && L.items[k].group === g && C.exercises[k].unit !== 'bw' && !C.exercises[k].noMachine);
+  const m = C.sore.map[key] || [], main = m[0];
+  if (!m.length) { const g = (L.items[key] || {}).group; return Object.keys(C.exercises).filter(k => k !== key && L.items[k] && L.items[k].group === g && C.exercises[k].unit !== 'bw' && !C.exercises[k].noMachine); }
+  return Object.keys(C.exercises).filter(k => k !== key && L.items[k] && C.exercises[k].unit !== 'bw' && !C.exercises[k].noMachine)
+    .map(k => { const o = C.sore.map[k] || []; return { k, has: o.includes(main), sc: (o[0] === main ? 3 : 1) + o.filter(r => r !== main && m.includes(r)).length }; })
+    .filter(x => x.has && x.sc >= 2).sort((a, b) => b.sc - a.sc).slice(0, 6).map(x => x.k);
+}
+// 動作練邊度：主要部位紅、輔助部位橙
+const exLv = k => { const lv = {}; (C.sore.map[k] || []).forEach((r, i) => { lv[r] = i === 0 ? 2 : 1; }); return lv; };
+function swapItem(i, k) {
+  const it = S.active.items[i], old = it.key;
+  it.key = k; it.swapFrom = it.swapFrom || old; it.subFrom = null;
+  const w = progression(it.key, it.reps).w;
+  it.sets.forEach(x => { if (!x.done) x.w = w ?? ''; });
+  save(); render(); toast(`已換做「${C.exercises[it.key].name}」`);
+}
+function muscleModal() {
+  const { i, k } = UI.mm, it = S.active.items[i], lv = exLv(k), canSwap = !it.sets.some(x => x.done);
+  const alts = swapOptions(it.key);
+  modal(`<h2>🧍 ${esc(C.exercises[k].name)}</h2>
+    <p class="small">${k === it.key ? '而家做緊呢個' : '👁 預覽緊替代動作'} · 💪 ${esc(musclesOf(k))}</p>
+    <div class="body-pair"><div>${bodySvg('front', lv, false)}<div class="small muted" style="text-align:center">前面</div></div><div>${bodySvg('back', lv, false)}<div class="small muted" style="text-align:center">背面</div></div></div>
+    <p class="small muted">🟥 主要練 · 🟧 輔助</p>
+    ${k !== it.key ? `<button class="btn sm ghost" data-act="mmPreview" data-k="${it.key}">↩︎ 返去睇「${esc(C.exercises[it.key].name)}」</button>` : ''}
+    <h3 style="margin-top:12px">冇呢部機／有人用？練同樣部位：</h3>
+    ${alts.length ? alts.map(a => `<div class="row between" style="margin:6px 0;flex-wrap:nowrap;gap:6px">
+      <button class="btn sm ghost grow" style="text-align:left" data-act="mmPreview" data-k="${a}">${a === k ? '👁 ' : ''}${esc(C.exercises[a].name)}<br><span class="small muted">${esc(musclesOf(a))}</span></button>
+      ${canSwap ? `<button class="btn sm" data-act="mmSwap" data-k="${a}">換</button>` : ''}</div>`).join('') : '<p class="small muted">暫時冇其他練同樣部位嘅動作。</p>'}
+    ${canSwap ? '' : '<p class="small muted">呢個動作已經做咗組，唔可以再換。</p>'}
+    <div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`);
 }
 const musclesOf = k => (L.items[k] || {}).muscles || '';
 function swapSelect(it, i) {
@@ -2052,10 +2080,10 @@ const BODY_BASE = {
   front: '<circle cx="100" cy="30" r="18"/><rect x="92" y="46" width="16" height="14" rx="4"/><circle cx="46" cy="192" r="8"/><circle cx="154" cy="192" r="8"/><rect x="72" y="172" width="56" height="24" rx="8"/><circle cx="85" cy="294" r="9"/><circle cx="115" cy="294" r="9"/><rect x="77" y="304" width="16" height="62" rx="8"/><rect x="107" y="304" width="16" height="62" rx="8"/><ellipse cx="84" cy="374" rx="10" ry="6"/><ellipse cx="116" cy="374" rx="10" ry="6"/>',
   back: '<circle cx="100" cy="30" r="18"/><rect x="92" y="46" width="16" height="10" rx="4"/><circle cx="46" cy="192" r="8"/><circle cx="154" cy="192" r="8"/><circle cx="85" cy="294" r="8"/><circle cx="115" cy="294" r="8"/><ellipse cx="84" cy="372" rx="10" ry="6"/><ellipse cx="116" cy="372" rx="10" ry="6"/>'
 };
-function bodySvg(side, lv) {
+function bodySvg(side, lv, tap = true) {
   return `<svg viewBox="0 0 200 384" class="body-svg" role="img" aria-label="${side === 'front' ? '前面' : '背面'}">
     <g class="body-base">${BODY_BASE[side]}</g>
-    ${BODY[side].map(([k, shp]) => `<g class="body-part lv${lv[k] || 0}" data-act="soreTap" data-k="${k}"><title>${esc(SORE[k])}</title>${shp}</g>`).join('')}
+    ${BODY[side].map(([k, shp]) => `<g class="body-part lv${lv[k] || 0}" ${tap ? 'data-act="soreTap"' : ''} data-k="${k}"><title>${esc(SORE[k])}</title>${shp}</g>`).join('')}
   </svg>`;
 }
 // 最近 3 日（酸通常喺訓練後 1–3 日出現）練過／郁過嘅位
@@ -2194,6 +2222,9 @@ const actions = {
   },
   backupNow() { S.lastBackup = today(); save(); exportClaude(); render(); },
   exInfo(el) { exModal(el.dataset.k); },
+  muscleMap(el) { if (!S.active) return; const i = +el.dataset.i; UI.mm = { i, k: S.active.items[i].key }; muscleModal(); },
+  mmPreview(el) { if (!UI.mm) return; UI.mm.k = el.dataset.k; muscleModal(); },
+  mmSwap(el) { if (!UI.mm || !S.active) return; const i = UI.mm.i; UI.mm = null; closeModal(); swapItem(i, el.dataset.k); },
   libGroup(el) { UI.libGroup = el.dataset.g; render(); },
   seenReview(el) { S.reviewSeen = el.dataset.w; save(); render(); },
   startGym(el) {
@@ -2392,13 +2423,7 @@ $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeM
 document.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset.set) { setField(t); return; }
-  if (t.dataset.swap != null && t.value && S.active) {
-    const it = S.active.items[t.dataset.swap], old = it.key;
-    it.key = t.value; it.swapFrom = it.swapFrom || old; it.subFrom = null;
-    const w = progression(it.key, it.reps).w;
-    it.sets.forEach(x => { if (!x.done) x.w = w ?? ''; });
-    save(); render(); toast(`已換做「${C.exercises[it.key].name}」`); return;
-  }
+  if (t.dataset.swap != null && t.value && S.active) { swapItem(t.dataset.swap, t.value); return; }
   if (t.dataset.together && S.active) { S.active.together = t.checked; save(); return; }
   if (t.id === 'aInt') { t.dataset.touched = '1'; actEstUpdate(); return; }
   if (t.id === 'aKind') { actEstUpdate(); return; }

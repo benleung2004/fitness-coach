@@ -4,7 +4,7 @@
 // 改完記得將 sw.js 入面嘅 CACHE_VERSION 加 1，手機先會攞到新版。
 // =============================================================
 window.CONFIG = {
-  version: '1.15.0',
+  version: '1.16.0',
 
   // ---------- 每週 / 每日目標 ----------
   targets: {
@@ -104,6 +104,9 @@ window.CONFIG = {
     dbRdl:      { name: '啞鈴羅馬尼亞硬拉 Dumbbell RDL', type: 'compound', unit: 'kg', inc: 1, rest: '90–120 秒',
                   cue: '同你做開嘅「Hello」（早安式）一樣係屈髖，但啞鈴揸喺身前、貼住大腿落：膝頭微彎，屁股向後推，背保持直，落到膝頭下面少少感覺大腿後拉緊就起返身。',
                   sub: '臀橋／腿推機（腳踩高啲）', avoid: ['back'], painSub: { back: 'gluteBridge' } },
+    facePull:   { name: '面拉（鋼索）Face Pull', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
+                  cue: '鋼索滑輪調到眼睛高度，揸住手柄／繩，拉向額頭，手肘向外向後打開，夾實上背；唔好聳膊。',
+                  sub: '反向飛鳥', avoid: ['shoulder'], painSub: { shoulder: null } },
     assistPullup:{ name: '輔助引體上升機 Assisted Pull-up', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒', assist: true,
                   cue: '膝頭跪喺軟墊，雙手揸頂上手柄；先沉膊頭，再用手肘向下拉，將自己拉上去直至下巴到手柄高度，慢慢落返。kg 係「輔助」重量：越重越易，進步係慢慢減輕。',
                   sub: '滑輪下拉（鋼索）', avoid: ['shoulder'], painSub: { shoulder: null } },

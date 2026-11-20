@@ -215,3 +215,6 @@ a.btn { text-decoration: none; }
 .body-part.lv0 { fill: #3a4a5c; }
 .body-part.lv1 { fill: #f0a640; }
 .body-part.lv2 { fill: #e5484d; }
+
+.body-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; justify-items: center; margin: 4px 0; }
+.body-pair .body-svg { max-width: 150px; }
