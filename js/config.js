@@ -4,7 +4,7 @@
 // 改完記得將 sw.js 入面嘅 CACHE_VERSION 加 1，手機先會攞到新版。
 // =============================================================
 window.CONFIG = {
-  version: '1.14.0',
+  version: '1.15.0',
 
   // ---------- 每週 / 每日目標 ----------
   targets: {
@@ -104,6 +104,9 @@ window.CONFIG = {
     dbRdl:      { name: '啞鈴羅馬尼亞硬拉 Dumbbell RDL', type: 'compound', unit: 'kg', inc: 1, rest: '90–120 秒',
                   cue: '同你做開嘅「Hello」（早安式）一樣係屈髖，但啞鈴揸喺身前、貼住大腿落：膝頭微彎，屁股向後推，背保持直，落到膝頭下面少少感覺大腿後拉緊就起返身。',
                   sub: '臀橋／腿推機（腳踩高啲）', avoid: ['back'], painSub: { back: 'gluteBridge' } },
+    assistPullup:{ name: '輔助引體上升機 Assisted Pull-up', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒', assist: true,
+                  cue: '膝頭跪喺軟墊，雙手揸頂上手柄；先沉膊頭，再用手肘向下拉，將自己拉上去直至下巴到手柄高度，慢慢落返。kg 係「輔助」重量：越重越易，進步係慢慢減輕。',
+                  sub: '滑輪下拉（鋼索）', avoid: ['shoulder'], painSub: { shoulder: null } },
     gobletSquat:{ name: '高腳杯深蹲 Goblet Squat', type: 'compound', unit: 'kg', inc: 1, rest: '90–120 秒',
                   cue: '雙手捧住啞鈴喺心口前，屁股向後向下坐，胸口挺起，膝頭跟腳尖方向。',
                   sub: '腿推機', avoid: ['knee'], painSub: { knee: 'gluteBridge' } },
@@ -126,7 +129,7 @@ window.CONFIG = {
     gymB: { name: 'Gym B 日（全身）', phase: 1, exercises: [
       { key: 'legPress', sets: 2, reps: [10, 12] },
       { key: 'dbRdl', sets: 2, reps: [10, 12] },
-      { key: 'latPulldown', sets: 2, reps: [10, 12] },
+      { key: 'assistPullup', sets: 2, reps: [8, 12] },
       { key: 'dbShoulderPress', sets: 2, reps: [10, 12] },
       { key: 'chestFly', sets: 2, reps: [12, 15] },
       { key: 'backExt', sets: 2, reps: [12, 15] } ] },
@@ -274,7 +277,7 @@ window.CONFIG = {
     map: {
       legPress: ['quads', 'glutes', 'hamstrings'], legExt: ['quads'], legCurl: ['hamstrings'], dbRdl: ['hamstrings', 'glutes', 'lowerBack'], gluteBridge: ['glutes', 'hamstrings'],
       gobletSquat: ['quads', 'glutes'], bwSquat: ['quads', 'glutes'], splitSquat: ['quads', 'glutes'],
-      row: ['lats', 'traps', 'rearDelt', 'biceps'], latPulldown: ['lats', 'biceps'], dbRow: ['lats', 'traps', 'biceps'],
+      row: ['lats', 'traps', 'rearDelt', 'biceps'], latPulldown: ['lats', 'biceps'], assistPullup: ['lats', 'biceps', 'traps'], dbRow: ['lats', 'traps', 'biceps'],
       backExt: ['lowerBack', 'glutes', 'hamstrings'], abMachine: ['abs'], plank: ['abs', 'obliques'], crunch: ['abs'], deadBug: ['abs', 'obliques'],
       chestPress: ['chest', 'shoulders', 'triceps'], dbBench: ['chest', 'shoulders', 'triceps'], pushup: ['chest', 'shoulders', 'triceps'], chestFly: ['chest'],
       latRaise: ['shoulders'], shoulderPress: ['shoulders', 'triceps'], dbShoulderPress: ['shoulders', 'triceps'],
@@ -394,10 +397,10 @@ if (window.FC_USER === 'her') (function (C) {
   } });
   C.nutritionGoal = '減脂飲食：每餐一個手掌份量蛋白質（每日大約 70–90g）、半碟菜、飯半碗；飲品走甜。唔使捱餓，慢慢減先唔會反彈。';
   // 同男朋友一齊去 gym 時唔好撞機：每個位置都用唔同嘅機
-  // （佢 A：腿推、夾胸機反向、胸推、鋼索、啞鈴、腹背機；佢 B：腿推、啞鈴、鋼索、啞鈴肩推、夾胸機、腹背機）
+  // （佢 A：腿推、夾胸機反向、胸推、鋼索、啞鈴、腹背機；佢 B：腿推、啞鈴、輔助引體機、啞鈴肩推、夾胸機、腹背機）
   const reorder = (w, keys) => { const ex = C.workouts[w].exercises; C.workouts[w] = Object.assign({}, C.workouts[w], { exercises: keys.map(k => ex.find(e => e.key === k)).filter(Boolean).concat(ex.filter(e => !keys.includes(e.key))) }); };
   reorder('gymA', ['latPulldown', 'latRaise', 'legPress', 'reverseFly', 'abMachine', 'chestPress']);
-  reorder('gymB', ['dbShoulderPress', 'latPulldown', 'backExt', 'chestFly', 'legPress', 'dbRdl']);
+  reorder('gymB', ['dbShoulderPress', 'assistPullup', 'backExt', 'chestFly', 'legPress', 'dbRdl']);
   ['d1', 'd2', 'd3'].forEach(w => { const ex = C.workouts[w].exercises, h = Math.floor(ex.length / 2); reorder(w, ex.slice(h).concat(ex.slice(0, h)).map(e => e.key)); });
   C.milestones = C.milestones.filter(m => !/commute/i.test(m.id));
 })(window.CONFIG);

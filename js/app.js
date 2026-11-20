@@ -521,6 +521,13 @@ function progression(key, reps) {
     if (allTop && maxRpe <= 8) return { text: `上次全部做到 ${hi}${unitWord}：今次每組加 ${ex.inc}${unitWord}，或者放慢動作。`, w: null };
     return { text: `上次 ${rs.join(' / ')}${unitWord}：今次目標每組 ${hi}${unitWord}。`, w: null };
   }
+  if (ex.assist) {
+    const aw = Math.min(...last.sets.map(s => num(s.w)).filter(v => v != null && v > 0).concat(999));
+    if (aw === 999) return { text: `上次冇記輔助重量：今次揀一個做到 ${hi} 下仲有 3 下力嘅輔助（越重越易）。`, w: null };
+    if (allTop && maxRpe <= 8) { const nw = Math.max(0, aw - ex.inc); return { text: `上次輔助 ${aw}kg 全部做足 ${hi} 下 👍 今次輔助減到 ${nw}kg（輔助越少 = 越勁）。`, w: nw }; }
+    if (maxRpe >= 9.5 || anyLow) return { text: `上次輔助 ${aw}kg 幾辛苦（${rs.join('/')} 下）：今次保持，或者加 ${ex.inc}kg 輔助，專心做好姿勢。`, w: aw };
+    return { text: `上次輔助 ${aw}kg：${rs.join(' / ')} 下。今次保持 ${aw}kg，每組試加 1–2 下（目標 ${hi} 下）。`, w: aw };
+  }
   const w = Math.max(...last.sets.map(s => num(s.w) || 0));
   if (allTop && maxRpe <= 8) {
     const [p1, p2] = C.rules.progressWeightPct;
@@ -535,6 +542,7 @@ function progression(key, reps) {
 function warmupText(key, w) {
   const ex = C.exercises[key];
   if (ex.unit !== 'kg' || ex.type !== 'compound') return '';
+  if (ex.assist) return '熱身：用多啲輔助（易啲）做 1 組 × 8 下。';
   if (!w || w < 15) return '熱身：用好輕重量做 1 組 × 10 下。';
   return `熱身：${roundTo(w * 0.5, ex.inc)}kg × 8 下 → ${roundTo(w * 0.7, ex.inc)}kg × 5 下（唔計入正式組）。`;
 }
