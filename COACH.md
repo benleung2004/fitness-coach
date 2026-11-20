@@ -49,7 +49,7 @@ done
 - 目標、規則數字 → `js/config.js` 嘅 `targets`、`rules`
 - 動作、組數、次數、替代動作 → `js/config.js` 嘅 `exercises`、`workouts`
 - 班次提示、飲食建議、通勤建議 → `js/config.js`
-- 用戶嘅 gym：chocoZAP 太和（有鋼索滑輪機、可調凳、啞鈴；冇下拉專用機同坐姿划船機，所以 row／latPulldown 用鋼索做）。「點揀重量」教學 → `js/config.js` 嘅 `weightGuide`
+- 用戶嘅 gym：chocoZAP 太和（有腿推機、「胸＋膊頭」二合一機（向前推 = chestPress、向中間夾 = chestFly）、腹背機（捲腹＋背伸展）、鋼索滑輪機、可調凳、啞鈴；冇下拉專用機、坐姿划船機、腿伸展機、腿彎舉機、器械肩推，所以 row／latPulldown 用鋼索做，腳只有腿推，大腿後用 dbRdl，肩推用 dbShoulderPress；冇嘅機喺 `exercises` 標 `noMachine: true`）。「點揀重量」教學 → `js/config.js` 嘅 `weightGuide`
 - 動作教學（中文步驟、常見錯誤、示範圖）→ `js/library.js`；新動作要加相就由 free-exercise-db 下載、縮到 480px 闊放入 `img/ex/<key>-0.jpg`／`-1.jpg`，再加入 `sw.js` 預先快取清單
 - 推薦邏輯 → `js/app.js` 嘅 `recommend()`
 - gym 日熱身、帶氧收尾（燃脂）、屋企核心提示 → `js/config.js` 嘅 `gymExtras`；組數按時間／精神加減 → `setsFor()`；帶氧強度揀法 → `gymCardio()`。gym 只做器械，平板支撐／捲腹留返屋企

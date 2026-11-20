@@ -1021,7 +1021,7 @@ function vRec(rec) {
       const r = resolveEx(s.key, pain);
       if (!r.key) return `<li class="muted"><s>${esc(C.exercises[s.key].name)}</s>（今日略過）</li>`;
       const sets = setsFor(s, rec.template, rec.mode);
-      return `<li>${exLink(r.key, esc(C.exercises[r.key].name))} <span class="muted">${sets} × ${s.reps[0]}–${s.reps[1]}</span>${r.from ? ' <span class="chip warn">替代</span>' : ''}</li>`;
+      return `<li>${exLink(r.key, esc(C.exercises[r.key].name))} <span class="muted">${sets} × ${s.reps[0]}–${s.reps[1]}</span>${r.from ? ' <span class="chip warn">替代</span>' : ''}${musclesOf(r.key) ? `<br><span class="small muted">💪 ${esc(musclesOf(r.key))}</span>` : ''}</li>`;
     }).join('')}</ul>
     ${(() => { const c = gymCardio(rec.mode); const mins = gymMinutes(list.filter(s => resolveEx(s.key, pain).key).map(s => ({ key: s.key, n: setsFor(s, rec.template, rec.mode) })), c);
       return `<p class="small">🔥 熱身 ${C.gymExtras.warmup.minutes} 分鐘 → 🏋️ 器械 → 🏃 ${esc(c.title)}</p><p class="small muted">預計大約 ${mins} 分鐘</p>`; })()}
@@ -1332,7 +1332,7 @@ function vSession() {
     return `<div class="ex">
       <div class="row" style="align-items:flex-start;flex-wrap:nowrap"><button class="thumbbtn" data-act="exInfo" data-k="${it.key}" aria-label="睇示範">${animHtml(it.key, 'sm')}</button>
         <div class="grow"><div class="ex-name">${exLink(it.key, esc(ex.name))}</div>${it.subFrom ? '<span class="chip warn">因痛替代</span>' : ''}
-      <div class="small muted">${it.sets.length} 組 × ${it.reps[0]}–${it.reps[1]} ${unit} · 休息 ${esc(ex.rest)}</div></div></div>
+      <div class="small muted">${it.sets.length} 組 × ${it.reps[0]}–${it.reps[1]} ${unit} · 休息 ${esc(ex.rest)}</div>${musclesOf(it.key) ? `<div class="small">💪 練：${esc(musclesOf(it.key))}</div>` : ''}</div></div>
       ${C.workouts[a.type].exercises.find(s => s.key === it.slot && s.note) ? `<div class="small muted">${esc(C.workouts[a.type].exercises.find(s => s.key === it.slot).note)}</div>` : ''}
       <div class="sug">${esc(prog.text)}${warmupText(it.key, prog.w) ? '<br>' + esc(warmupText(it.key, prog.w)) : ''}</div>
       ${swapSelect(it, i)}
@@ -1390,11 +1390,12 @@ function swapOptions(key) {
   const g = (L.items[key] || {}).group;
   return Object.keys(C.exercises).filter(k => k !== key && L.items[k] && L.items[k].group === g && C.exercises[k].unit !== 'bw' && !C.exercises[k].noMachine);
 }
+const musclesOf = k => (L.items[k] || {}).muscles || '';
 function swapSelect(it, i) {
   if (it.sets.some(x => x.done)) return '';
   const ks = swapOptions(it.key);
   if (!ks.length) return '';
-  return `<label class="f small" style="margin:6px 0">🔄 部機有人用／唔鍾意？換同部位動作<select data-swap="${i}"><option value="">— 唔換 —</option>${ks.map(k => `<option value="${k}">${esc(C.exercises[k].name)}</option>`).join('')}</select></label>`;
+  return `<label class="f small" style="margin:6px 0">🔄 部機有人用／唔鍾意？換同部位動作<select data-swap="${i}"><option value="">— 唔換 —</option>${ks.map(k => `<option value="${k}">${esc(C.exercises[k].name)}${musclesOf(k) ? '（' + esc(musclesOf(k)) + '）' : ''}</option>`).join('')}</select></label>`;
 }
 const togetherBox = a => `<label class="row f" style="margin:0 0 10px"><input type="checkbox" data-together="1" ${a.together ? 'checked' : ''}> 👫 今次同${esc(C.partner.name)}一齊做</label>`;
 // RPE 選項文字：顯示仲剩幾多下

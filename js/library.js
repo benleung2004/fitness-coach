@@ -12,7 +12,7 @@ window.LIBRARY = {
   items: {
     // ---------- 腿同臀 ----------
     legPress: { zh: '腿推機', en: 'Leg Press', group: 'legs', img: 'photo', muscles: '大腿前（股四頭肌）、臀部、大腿後',
-      find: '一部斜躺／坐低、用腳推住一塊大踏板嘅機。有啲寫 "Leg Press" 或者 "Seated Leg Press"。',
+      find: 'chocoZAP 太和：腳踩住踏板、將自己個身推上去嘅腿推機（呢間 gym 練腳只有呢部機，其他腳嘅動作用啞鈴）。',
       steps: ['坐好背貼實椅墊，雙腳與膊頭同寬踩喺踏板中間。', '推直雙腳，打開安全鎖（如果有）。', '慢慢屈膝落嚟，直至膝頭大約 90 度。', '用腳掌成個踩實發力推返上去，唔好完全鎖死膝頭。'],
       mistakes: ['落得太深令屁股離開椅墊、腰捲起。', '膝頭向內夾（應該跟住腳尖方向）。', '推到盡鎖死膝頭。'] },
     legExt: { zh: '腿伸展機', en: 'Leg Extension', group: 'legs', img: 'photo', muscles: '大腿前（股四頭肌）',
@@ -27,6 +27,10 @@ window.LIBRARY = {
     gluteBridge: { zh: '臀橋', en: 'Glute Bridge', group: 'legs', img: 'photo', muscles: '臀部、大腿後',
       steps: ['瞓低，屈膝，腳掌踩地，手放身邊。', '收肚，用臀部將屁股頂起。', '頂到膊頭、屁股、膝頭成一直線，夾實 1 秒。', '慢慢落返地面。'],
       mistakes: ['用腰頂到拱起。', '腳太遠，變成大腿後抽筋。'] },
+    dbRdl: { zh: '啞鈴羅馬尼亞硬拉', en: 'Dumbbell Romanian Deadlift', group: 'legs', img: 'photo', muscles: '大腿後（膕繩肌）、臀部、下背',
+      find: '啞鈴區攞一對啞鈴（chocoZAP 太和冇腿彎舉機，練大腿後就用呢個）。',
+      steps: ['企直，雙手揸啞鈴喺大腿前面，雙腳同髖同闊，膝頭微彎。', '屁股向後推，上身向前傾，背保持直，啞鈴貼住大腿慢慢落。', '落到膝頭下面少少、大腿後有拉緊感就停。', '用臀同大腿後發力，屁股向前推返企直。'],
+      mistakes: ['彎腰駝背（腰會受傷）。', '當深蹲咁屈膝。', '啞鈴離開身體太遠。'] },
     gobletSquat: { zh: '高腳杯深蹲', en: 'Goblet Squat', group: 'legs', img: 'photo', muscles: '大腿前、臀部、核心',
       steps: ['雙手捧住一個啞鈴喺心口前。', '雙腳比膊頭略闊，腳尖微微向外。', '屁股向後向下坐，胸口保持挺起。', '蹲到大腿差唔多水平，用腳掌推返起身。'],
       mistakes: ['膝頭向內夾。', '腳踭離地。', '彎腰駝背。'] },
@@ -44,7 +48,7 @@ window.LIBRARY = {
       steps: ['一隻手同膝頭撐喺平凳，背保持平直。', '另一隻手揸啞鈴，手臂垂直向下。', '手肘向上向後拉，啞鈴拉到腰側。', '慢慢放返落。'],
       mistakes: ['轉身借力。', '彎腰駝背。'] },
     backExt: { zh: '背伸展', en: 'Back Extension', group: 'back', img: 'photo', muscles: '下背、臀部、大腿後',
-      find: 'chocoZAP：用「腹背機」嘅背部模式（機上說明牌左邊嗰張）。墊轉去背後。（示範相係另一款背伸展凳，用嘅肌肉一樣。）',
+      find: 'chocoZAP：用「腹背機」（雙功能腹背機）嘅背部模式。認住：座位上方有一條粗身橫向海綿滾輪墊，旁邊有角度調節插銷；將滾輪墊調去背後肩胛骨下方。（示範相係另一款背伸展凳，用嘅肌肉一樣。）',
       steps: ['坐低，將墊調到背後，雙腳踩住前面黑色橫桿，扣好左邊安全帶；揀輕重量。', '雙手喺胸前交叉，上背頂住墊。', '用下背同臀發力慢慢向後倒，推到身體坐直少少就停。', '一邊吸氣，一邊慢慢返原位。'],
       mistakes: ['向後推得太盡、拗腰。', '腰痛照做（應該改做鳥狗式）。'] },
     abMachine: { zh: '腹背機捲腹', en: 'Ab Crunch Machine', group: 'core', img: 'photo', muscles: '腹部',
@@ -54,14 +58,14 @@ window.LIBRARY = {
 
     // ---------- 胸 ----------
     chestPress: { zh: '器械胸推', en: 'Machine Chest Press', group: 'chest', img: 'photo', muscles: '胸、膊頭前、三頭肌',
-      find: '坐低、背貼椅背、兩邊手柄向前推嘅機。', video: 'https://youtube.com/shorts/Qu7-ceCvq7w',
+      find: 'chocoZAP 太和：「胸＋膊頭」二合一機，用水平向前推嘅手柄就係胸推（同一部機向中間夾就係夾胸）。', video: 'https://youtube.com/shorts/Qu7-ceCvq7w',
       steps: ['調較座位高度，令手柄大約喺心口中間。', '背貼實椅背，膊頭向後收。', '向前推到手差唔多伸直（唔好鎖死）。', '慢慢返到胸前。'],
       mistakes: ['聳膊。', '屁股離開座位。', '推得太快唔控制。'] },
     dbBench: { zh: '啞鈴臥推', en: 'Dumbbell Bench Press', group: 'chest', img: 'photo', muscles: '胸、膊頭前、三頭肌',
       steps: ['瞓喺平凳，雙腳踩地，啞鈴放喺胸口兩邊。', '膊頭收埋，手肘大約同身體成 45 度。', '向上推，頂點兩個啞鈴唔使撞埋。', '慢慢落返到胸側。'],
       mistakes: ['手肘打得太開（傷膊頭）。', '啞鈴落得太低。'] },
     chestFly: { zh: '器械夾胸', en: 'Machine Chest Fly / Pec Deck / Butterfly', group: 'chest', img: 'photo', muscles: '胸',
-      find: '坐低、兩邊有手柄或者墊，向中間合埋嘅機（"Pec Deck" / "Butterfly"）。',
+      find: 'chocoZAP 太和：同胸推係同一部「胸＋膊頭」二合一機，用側邊手柄由兩邊拉向中間。',
       steps: ['調較座位，令手柄同膊頭差唔多高。', '手肘微彎，保持角度唔變。', '好似攬住一棵大樹咁向中間合埋。', '慢慢打開返，感覺胸口被拉開就停。'],
       mistakes: ['打開得太後（傷膊頭）。', '手肘角度變來變去。'] },
 

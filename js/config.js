@@ -4,7 +4,7 @@
 // 改完記得將 sw.js 入面嘅 CACHE_VERSION 加 1，手機先會攞到新版。
 // =============================================================
 window.CONFIG = {
-  version: '1.13.0',
+  version: '1.14.0',
 
   // ---------- 每週 / 每日目標 ----------
   targets: {
@@ -57,13 +57,16 @@ window.CONFIG = {
     plank:      { name: '平板支撐 Plank', type: 'core', unit: 'sec', inc: 5, rest: '60 秒',
                   cue: '頭到腳一直線，收肚收臀，唔好塌腰或者翹高屁股。',
                   sub: '跪地平板支撐', avoid: ['back'], painSub: { back: 'birdDog' } },
-    legExt:     { name: '腿伸展機 Leg Extension', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
+    legExt:     { noMachine: true, // chocoZAP 太和冇（2026-11-20 確認）
+                  name: '腿伸展機 Leg Extension', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
                   cue: '膝頭對準機器轉軸；頂到最高停一停，慢慢放。',
                   sub: '徒手深蹲（慢速）', avoid: ['knee'], painSub: { knee: 'gluteBridge' } },
-    legCurl:    { name: '腿彎舉機 Leg Curl', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
+    legCurl:    { noMachine: true, // chocoZAP 太和冇（2026-11-20 確認）
+                  name: '腿彎舉機 Leg Curl', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
                   cue: '屁股貼實座位，用大腿後面發力屈膝，唔好甩。',
                   sub: '臀橋／瑞士球腿彎舉', avoid: [], painSub: {} },
-    shoulderPress:{ name: '坐姿肩推 Shoulder Press', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
+    shoulderPress:{ noMachine: true, // chocoZAP 太和冇（2026-11-20 確認）
+                  name: '坐姿肩推 Shoulder Press', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
                   cue: '背貼實椅背，推上去時唔好拗腰；落到耳仔高度左右。',
                   sub: '器械肩推／啞鈴肩推', avoid: ['shoulder'], painSub: { shoulder: null } },
     chestFly:   { name: '器械夾胸 Machine Chest Fly', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
@@ -98,6 +101,12 @@ window.CONFIG = {
                   cue: '坐直背貼椅背，推上去唔好碰埋，落到耳仔高度。', sub: '器械肩推', avoid: ['shoulder'], painSub: { shoulder: null } },
     gluteBridge:{ name: '臀橋 Glute Bridge', type: 'bw', unit: 'bw', inc: 2, rest: '60 秒',
                   cue: '瞓低屈膝，用臀部發力頂起，頂點夾實 1 秒。', sub: '單腳臀橋', avoid: [], painSub: {} },
+    dbRdl:      { name: '啞鈴羅馬尼亞硬拉 Dumbbell RDL', type: 'compound', unit: 'kg', inc: 1, rest: '90–120 秒',
+                  cue: '同你做開嘅「Hello」（早安式）一樣係屈髖，但啞鈴揸喺身前、貼住大腿落：膝頭微彎，屁股向後推，背保持直，落到膝頭下面少少感覺大腿後拉緊就起返身。',
+                  sub: '臀橋／腿推機（腳踩高啲）', avoid: ['back'], painSub: { back: 'gluteBridge' } },
+    gobletSquat:{ name: '高腳杯深蹲 Goblet Squat', type: 'compound', unit: 'kg', inc: 1, rest: '90–120 秒',
+                  cue: '雙手捧住啞鈴喺心口前，屁股向後向下坐，胸口挺起，膝頭跟腳尖方向。',
+                  sub: '腿推機', avoid: ['knee'], painSub: { knee: 'gluteBridge' } },
     birdDog:    { name: '鳥狗式 Bird-dog', type: 'core', unit: 'bw', inc: 2, rest: '45 秒',
                   cue: '四點跪地，對角手腳伸直，身體唔好搖；每邊計一下。', sub: '死蟲式', avoid: [], painSub: {} },
     deadBug:    { name: '死蟲式 Dead Bug', type: 'core', unit: 'bw', inc: 2, rest: '45 秒',
@@ -115,10 +124,10 @@ window.CONFIG = {
       { key: 'latRaise', sets: 2, reps: [12, 15] },
       { key: 'abMachine', sets: 2, reps: [12, 15] } ] },
     gymB: { name: 'Gym B 日（全身）', phase: 1, exercises: [
-      { key: 'legExt', sets: 2, reps: [10, 12] },
-      { key: 'legCurl', sets: 2, reps: [10, 12] },
+      { key: 'legPress', sets: 2, reps: [10, 12] },
+      { key: 'dbRdl', sets: 2, reps: [10, 12] },
       { key: 'latPulldown', sets: 2, reps: [10, 12] },
-      { key: 'shoulderPress', sets: 2, reps: [10, 12] },
+      { key: 'dbShoulderPress', sets: 2, reps: [10, 12] },
       { key: 'chestFly', sets: 2, reps: [12, 15] },
       { key: 'backExt', sets: 2, reps: [12, 15] } ] },
     d1: { name: '全身 Day 1', phase: 2, exercises: [
@@ -126,21 +135,21 @@ window.CONFIG = {
       { key: 'latPulldown', sets: 3, reps: [10, 12] },
       { key: 'dbBench', sets: 3, reps: [10, 12] },
       { key: 'latRaise', sets: 3, reps: [12, 15] },
-      { key: 'legExt', sets: 3, reps: [10, 14] },
+      { key: 'gobletSquat', sets: 3, reps: [10, 12] },
       { key: 'dbCurl', sets: 2, reps: [12, 15] },
       { key: 'pushdown', sets: 2, reps: [12, 15] } ] },
     d2: { name: '全身 Day 2', phase: 2, exercises: [
       { key: 'legPress', sets: 3, reps: [8, 12], note: '想試保加利亞分腿蹲可以，但先用徒手、確定膝頭同平衡 OK。' },
       { key: 'latPulldown', sets: 3, reps: [8, 12] },
       { key: 'reverseFly', sets: 3, reps: [12, 15] },
-      { key: 'legCurl', sets: 3, reps: [10, 12] },
+      { key: 'dbRdl', sets: 3, reps: [10, 12] },
       { key: 'latRaise', sets: 3, reps: [12, 15] },
       { key: 'ohTriceps', sets: 2, reps: [12, 15] },
       { key: 'cableCurl', sets: 2, reps: [10, 15] } ] },
     d3: { name: '全身 Day 3', phase: 2, exercises: [
       { key: 'dbShoulderPress', sets: 3, reps: [10, 12] },
       { key: 'legPress', sets: 3, reps: [10, 12] },
-      { key: 'legCurl', sets: 3, reps: [10, 12] },
+      { key: 'dbRdl', sets: 3, reps: [10, 12] },
       { key: 'chestFly', sets: 3, reps: [12, 15] },
       { key: 'ohTriceps', sets: 2, reps: [12, 15] },
       { key: 'abMachine', sets: 3, reps: [12, 15] } ] }
@@ -263,7 +272,7 @@ window.CONFIG = {
     },
     // 每個動作主要練到邊度（用嚟對比酸嘅位）
     map: {
-      legPress: ['quads', 'glutes', 'hamstrings'], legExt: ['quads'], legCurl: ['hamstrings'], gluteBridge: ['glutes', 'hamstrings'],
+      legPress: ['quads', 'glutes', 'hamstrings'], legExt: ['quads'], legCurl: ['hamstrings'], dbRdl: ['hamstrings', 'glutes', 'lowerBack'], gluteBridge: ['glutes', 'hamstrings'],
       gobletSquat: ['quads', 'glutes'], bwSquat: ['quads', 'glutes'], splitSquat: ['quads', 'glutes'],
       row: ['lats', 'traps', 'rearDelt', 'biceps'], latPulldown: ['lats', 'biceps'], dbRow: ['lats', 'traps', 'biceps'],
       backExt: ['lowerBack', 'glutes', 'hamstrings'], abMachine: ['abs'], plank: ['abs', 'obliques'], crunch: ['abs'], deadBug: ['abs', 'obliques'],
@@ -385,10 +394,10 @@ if (window.FC_USER === 'her') (function (C) {
   } });
   C.nutritionGoal = '減脂飲食：每餐一個手掌份量蛋白質（每日大約 70–90g）、半碟菜、飯半碗；飲品走甜。唔使捱餓，慢慢減先唔會反彈。';
   // 同男朋友一齊去 gym 時唔好撞機：每個位置都用唔同嘅機
-  // （佢 A：腿推、夾胸機反向、胸推、鋼索、啞鈴、腹背機；佢 B：腿伸／彎、鋼索、肩推、夾胸機、腹背機）
+  // （佢 A：腿推、夾胸機反向、胸推、鋼索、啞鈴、腹背機；佢 B：腿推、啞鈴、鋼索、啞鈴肩推、夾胸機、腹背機）
   const reorder = (w, keys) => { const ex = C.workouts[w].exercises; C.workouts[w] = Object.assign({}, C.workouts[w], { exercises: keys.map(k => ex.find(e => e.key === k)).filter(Boolean).concat(ex.filter(e => !keys.includes(e.key))) }); };
   reorder('gymA', ['latPulldown', 'latRaise', 'legPress', 'reverseFly', 'abMachine', 'chestPress']);
-  reorder('gymB', ['shoulderPress', 'latPulldown', 'legExt', 'legCurl', 'backExt', 'chestFly']);
+  reorder('gymB', ['dbShoulderPress', 'latPulldown', 'backExt', 'chestFly', 'legPress', 'dbRdl']);
   ['d1', 'd2', 'd3'].forEach(w => { const ex = C.workouts[w].exercises, h = Math.floor(ex.length / 2); reorder(w, ex.slice(h).concat(ex.slice(0, h)).map(e => e.key)); });
   C.milestones = C.milestones.filter(m => !/commute/i.test(m.id));
 })(window.CONFIG);
