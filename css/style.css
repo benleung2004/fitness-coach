@@ -218,3 +218,9 @@ a.btn { text-decoration: none; }
 
 .body-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; justify-items: center; margin: 4px 0; }
 .body-pair .body-svg { max-width: 150px; }
+
+.eq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.eq-tile { background: var(--card2); border: 2px solid var(--line); border-radius: 12px; padding: 6px; color: var(--muted); font-size: 12px; text-align: left; display: flex; flex-direction: column; gap: 4px; }
+.eq-tile img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; opacity: .45; background: var(--line); }
+.eq-tile.on { border-color: var(--accent); color: var(--text); }
+.eq-tile.on img { opacity: 1; }

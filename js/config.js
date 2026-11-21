@@ -4,7 +4,7 @@
 // 改完記得將 sw.js 入面嘅 CACHE_VERSION 加 1，手機先會攞到新版。
 // =============================================================
 window.CONFIG = {
-  version: '1.17.0',
+  version: '1.18.0',
 
   // ---------- 每週 / 每日目標 ----------
   targets: {
@@ -41,8 +41,7 @@ window.CONFIG = {
     legPress:   { name: '腿推機 Leg Press', type: 'compound', unit: 'kg', inc: 5, rest: '90–120 秒',
                   cue: '腳掌成個踩實，膝頭跟住腳尖方向；落到大約 90 度，推返上去唔好鎖死膝頭。',
                   sub: '高腳杯深蹲 Goblet Squat／徒手分腿蹲', avoid: ['knee'], painSub: { knee: 'gluteBridge' } },
-    row:        { noMachine: true, // chocoZAP 太和搵唔到：計劃已經改用 reverseFly／latPulldown
-                  name: '坐姿划船（鋼索）Seated Cable Row', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
+    row:        { name: '坐姿划船（鋼索）Seated Cable Row', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
                   cue: '鋼索滑輪機兩邊滑輪調到最低，坐喺訓練椅；挺胸，先夾背，再用手肘拉向肚臍；唔好用腰向後拗。',
                   sub: '企姿單手鋼索划船：滑輪調到胸口高度，企定一隻腳踏前，一次拉一邊（唔使啞鈴）', avoid: [], painSub: {} },
     chestPress: { name: '器械胸推 Machine Chest Press', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
@@ -57,16 +56,13 @@ window.CONFIG = {
     plank:      { name: '平板支撐 Plank', type: 'core', unit: 'sec', inc: 5, rest: '60 秒',
                   cue: '頭到腳一直線，收肚收臀，唔好塌腰或者翹高屁股。',
                   sub: '跪地平板支撐', avoid: ['back'], painSub: { back: 'birdDog' } },
-    legExt:     { noMachine: true, // chocoZAP 太和冇（2026-11-20 確認）
-                  name: '腿伸展機 Leg Extension', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
+    legExt:     { name: '腿伸展機 Leg Extension', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
                   cue: '膝頭對準機器轉軸；頂到最高停一停，慢慢放。',
                   sub: '徒手深蹲（慢速）', avoid: ['knee'], painSub: { knee: 'gluteBridge' } },
-    legCurl:    { noMachine: true, // chocoZAP 太和冇（2026-11-20 確認）
-                  name: '腿彎舉機 Leg Curl', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
+    legCurl:    { name: '腿彎舉機 Leg Curl', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
                   cue: '屁股貼實座位，用大腿後面發力屈膝，唔好甩。',
                   sub: '臀橋／瑞士球腿彎舉', avoid: [], painSub: {} },
-    shoulderPress:{ noMachine: true, // chocoZAP 太和冇（2026-11-20 確認）
-                  name: '坐姿肩推 Shoulder Press', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
+    shoulderPress:{ name: '坐姿肩推 Shoulder Press', type: 'compound', unit: 'kg', inc: 2.5, rest: '90–120 秒',
                   cue: '背貼實椅背，推上去時唔好拗腰；落到耳仔高度左右。',
                   sub: '器械肩推／啞鈴肩推', avoid: ['shoulder'], painSub: { shoulder: null } },
     chestFly:   { name: '器械夾胸 Machine Chest Fly', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
@@ -90,8 +86,7 @@ window.CONFIG = {
                   cue: '手肘貼住身邊，只係前臂郁；壓到底停一停。', sub: '啞鈴過頭三頭伸展', avoid: ['wrist'], painSub: { wrist: null } },
     reverseFly: { name: '反向飛鳥／面拉 Reverse Fly / Face Pull', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
                   cue: '用膊頭後面發力向外拉開，唔好聳膊。', sub: '彈力帶拉開', avoid: ['shoulder'], painSub: { shoulder: null } },
-    hipThrust:  { noMachine: true, // 要槓鈴，chocoZAP 冇；唔再用
-                  name: '臀推／臀橋 Hip Thrust', type: 'compound', unit: 'kg', inc: 5, rest: '90 秒',
+    hipThrust:  { name: '臀推／臀橋 Hip Thrust', type: 'compound', unit: 'kg', inc: 5, rest: '90 秒',
                   cue: '下巴微收，頂到最高時夾實臀部；唔好用腰頂。', sub: '徒手臀橋', avoid: [], painSub: { back: 'gluteBridge' } },
     ohTriceps:  { name: '過頭三頭伸展 Overhead Triceps Ext.', type: 'isolation', unit: 'kg', inc: 1, rest: '60–90 秒',
                   cue: '手肘指向前上方唔好向外開，慢慢落。', sub: '繩索三頭下壓', avoid: ['shoulder'], painSub: { shoulder: 'pushdown' } },
@@ -271,6 +266,50 @@ window.CONFIG = {
 
   // ---------- 飲食 ----------
   // ---------- 肌肉酸痛圖（今日邊度酸）----------
+  // ---------- gym 器材（每間 gym 喺 App 剔有咩機；相：img/ex 動作相或者 img/eq） ----------
+  equipment: {
+    legPress:      { name: '腿推機 Leg Press', img: 'img/ex/legPress-0.jpg', cat: '腿' },
+    legExt:        { name: '腿伸展機 Leg Extension', img: 'img/ex/legExt-0.jpg', cat: '腿' },
+    legCurl:       { name: '腿彎舉機 Leg Curl', img: 'img/ex/legCurl-0.jpg', cat: '腿' },
+    hipAbd:        { name: '髖外展／內收機 Hip Abductor / Adductor', img: 'img/eq/hipAbd.jpg', cat: '腿' },
+    calfRaise:     { name: '小腿提踵機 Calf Raise', img: 'img/eq/calfRaise.jpg', cat: '腿' },
+    chestPress:    { name: '胸推機 Chest Press', img: 'img/ex/chestPress-0.jpg', cat: '胸／膊' },
+    pecDeck:       { name: '夾胸／反向飛鳥機 Pec Deck', img: 'img/ex/chestFly-0.jpg', cat: '胸／膊' },
+    shoulderPress: { name: '肩推機 Shoulder Press', img: 'img/ex/shoulderPress-0.jpg', cat: '胸／膊' },
+    pulldown:      { name: '下拉機 Lat Pulldown', img: 'img/ex/latPulldown-0.jpg', cat: '背' },
+    seatedRow:     { name: '坐姿划船機 Seated Row', img: 'img/ex/row-0.jpg', cat: '背' },
+    cable:         { name: '鋼索滑輪機 Cable Machine', img: 'img/ex/pushdown-0.jpg', cat: '背' },
+    assistPullup:  { name: '輔助引體上升機 Assisted Pull-up', img: 'img/ex/assistPullup-0.jpg', cat: '背' },
+    backExt:       { name: '背伸展機／腹背機 Back Extension', img: 'img/ex/backExt-0.jpg', cat: '核心' },
+    abMachine:     { name: '捲腹機／腹背機 Ab Crunch', img: 'img/ex/abMachine-0.jpg', cat: '核心' },
+    dumbbells:     { name: '啞鈴 Dumbbells', img: 'img/ex/dbCurl-0.jpg', cat: '自由重量' },
+    bench:         { name: '可調凳 Adjustable Bench', img: 'img/ex/dbBench-0.jpg', cat: '自由重量' },
+    kettlebell:    { name: '壺鈴 Kettlebell', img: 'img/eq/kettlebell.jpg', cat: '自由重量' },
+    smith:         { name: '史密斯機 Smith Machine', img: 'img/eq/smith.jpg', cat: '自由重量' },
+    rack:          { name: '深蹲架＋槓鈴 Squat Rack / Barbell', img: 'img/eq/rack.jpg', cat: '自由重量' },
+    treadmill:     { name: '跑步機 Treadmill', img: 'img/ex/treadmill-0.jpg', cat: '帶氧' },
+    bike:          { name: '健身單車 Exercise Bike', img: 'img/ex/bike-0.jpg', cat: '帶氧' },
+    elliptical:    { name: '太空漫步機 Elliptical', img: 'img/eq/elliptical.jpg', cat: '帶氧' },
+    rower:         { name: '划艇機 Rowing Machine', img: 'img/eq/rower.jpg', cat: '帶氧' },
+    stairs:        { name: '踏步機 Stair Climber', img: 'img/eq/stairs.jpg', cat: '帶氧' }
+  },
+  // 每個動作要用咩器材：全部都要有；[a, b] = 其中一樣就得；冇寫 = 唔使器材
+  exerciseEquip: {
+    legPress: ['legPress'], legExt: ['legExt'], legCurl: ['legCurl'], chestPress: ['chestPress'], chestFly: ['pecDeck'],
+    reverseFly: [['pecDeck', 'cable']], shoulderPress: ['shoulderPress'], latPulldown: [['pulldown', 'cable']], row: [['seatedRow', 'cable']],
+    assistPullup: ['assistPullup'], backExt: ['backExt'], abMachine: ['abMachine'], pushdown: ['cable'], cableCurl: ['cable'], facePull: ['cable'],
+    latRaise: ['dumbbells'], dbCurl: ['dumbbells'], ohTriceps: ['dumbbells'], dbRdl: ['dumbbells'], gobletSquat: [['dumbbells', 'kettlebell']],
+    dbBench: ['dumbbells', 'bench'], dbShoulderPress: ['dumbbells', 'bench'], hipThrust: ['rack', 'bench']
+  },
+  // gym 帶氧／熱身揀機要用嘅器材
+  choiceEquip: { incline: 'treadmill', run: 'treadmill', walk: 'treadmill', bike: 'bike', walker: 'elliptical' },
+  // 第一次用 App 嘅預設 gym（之後喺 App 改）
+  defaultGym: { id: 'chocozap-taiwo', name: 'chocoZAP 太和',
+    eq: ['legPress', 'chestPress', 'pecDeck', 'cable', 'assistPullup', 'backExt', 'abMachine', 'dumbbells', 'bench', 'treadmill', 'bike', 'elliptical'] },
+  // 「複製俾 Claude」嘅背景（唔好寫身高體重等個人數字，App 會由手機資料加）
+  aiBackground: '健身新手（2026 年 11 月開始），返輪班（早更／辦公時間／夜更），喺香港住。目標係養成習慣（持續最重要）同增肌；體重正常偏輕，唔使減重，要食夠。唔鍾意熱同濕，唔識游水。',
+  aiRules: ['頭 4 週唔做力竭、唔做保加利亞分腿蹲，目標 RPE 7（每組仲有大約 3 下力）', '有痛就停相關動作、改做替代動作；痛持續就睇醫生／物理治療師', 'gym 只做器械同啞鈴，平板支撐、捲腹留返屋企做', '夜更前後只做輕鬆行路同伸展', '用字鼓勵，唔好講「失敗」'],
+
   sore: {
     regions: {
       shoulders: '膊頭（前／側）', chest: '胸', biceps: '二頭肌', forearm: '前臂', abs: '腹', obliques: '側腹', quads: '大腿前',
@@ -364,6 +403,8 @@ if (window.FC_USER === 'her') (function (C) {
   C.user = 'her';
   C.partner = { name: '男朋友', path: 'data/fitness.json', url: '../' };
   C.goalText = '目標：減脂、身形實啲。每週 2–3 次 gym + 每日多行路；體重慢慢落（每週 0.3–0.5kg）就最理想。';
+  C.aiBackground = '健身新手（2026 年 11 月開始），返輪班（A／SA／Day／P／夜更），喺香港住，同男朋友一齊去 gym。目標係減脂、身形實啲，每週 2–3 次 gym + 多行路，體重慢慢落（每週 0.3–0.5kg）。';
+  C.aiRules = ['頭 4 週唔做力竭，目標 RPE 7（每組仲有大約 3 下力）', '有痛就停相關動作、改做替代動作', '可以輕微熱量赤字，但唔好捱餓', '用字鼓勵，唔好講「失敗」'];
   C.targets = Object.assign({}, C.targets, { cardioMinutes: 200, stepsLow: 7000, stepsHigh: 9000 });
   C.shifts = {
     A:      { name: 'A 更', tip: '16:00 放工，之後去 gym 最好。' },

@@ -34,17 +34,19 @@ const PAIN = { none: '冇', knee: '膝頭', back: '腰背', shoulder: '膊頭', 
 function blank() {
   return { profile: { onboarded: false, nickname: '', heightCm: '', startDate: today(), gfMode: false, phaseOverride: 'auto' },
            days: {}, workouts: [], activities: [], body: [], achieved: {}, active: null, reviewSeen: '', noteForClaude: '', noteUpd: 0,
-           weather: null, deleted: {}, lastBackup: '', roster: {}, gfRoster: {}, shiftTimes: null, meals: [] };
+           weather: null, deleted: {}, lastBackup: '', roster: {}, gfRoster: {}, shiftTimes: null, meals: [], gyms: [], gymSel: null };
 }
 let S;
 try { S = Object.assign(blank(), JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { S = blank(); }
+// 第一次用：預設 gym（upd 0，同步落嚟嘅版本一定較新）
+if (!Array.isArray(S.gyms) || !S.gyms.length) { const g0 = C.defaultGym; S.gyms = g0 ? [{ id: g0.id, name: g0.name, eq: Object.fromEntries(g0.eq.map(k => [k, true])), upd: 0 }] : []; }
 function persist() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('儲存失敗：手機空間可能唔夠'); } }
 function save() { persist(); scheduleSync(); }
 
 // ---------- 合併（同步同匯入共用）：唔會覆蓋，以較新嗰份為準 ----------
 function mergeData(R) {
   if (!R || typeof R !== 'object') return false;
-  const before = JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.gfRoster, S.shiftTimes, S.meals]);
+  const before = JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.gfRoster, S.shiftTimes, S.meals, S.gyms, S.gymSel]);
   const dead = Object.assign({}, R.deleted || {}, S.deleted || {});
   S.deleted = dead;
   const stamp = x => x.upd || x.at || 0;
@@ -57,6 +59,8 @@ function mergeData(R) {
   S.activities = byId(S.activities, R.activities);
   S.body = byId(S.body, R.body);
   S.meals = byId(S.meals, R.meals);
+  S.gyms = byId(S.gyms, R.gyms);
+  if (R.gymSel && (R.gymSel.upd || 0) > ((S.gymSel || {}).upd || 0)) S.gymSel = R.gymSel;
   Object.entries(R.days || {}).forEach(([d, r]) => {
     const l = S.days[d];
     if (!l) { S.days[d] = r; return; }
@@ -91,7 +95,7 @@ function mergeData(R) {
     Object.entries(R[key] || {}).forEach(([d, r]) => { const l = S[key][d]; if (r && (!l || (r.upd || 0) > (l.upd || 0))) S[key][d] = r; });
   });
   if (R.shiftTimes && R.shiftTimes.t && (R.shiftTimes.upd || 0) > ((S.shiftTimes || {}).upd || 0)) S.shiftTimes = { t: R.shiftTimes.t, upd: R.shiftTimes.upd };
-  return before !== JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.gfRoster, S.shiftTimes, S.meals]);
+  return before !== JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.gfRoster, S.shiftTimes, S.meals, S.gyms, S.gymSel]);
 }
 
 // ---------- GitHub 私人 repo 同步（token 只存喺呢部機，唔會匯出） ----------
@@ -186,7 +190,7 @@ function trimPartner(d) {
   const days = {}; Object.entries(d.days || {}).forEach(([k, v]) => { if (k >= from) days[k] = v; });
   return { nickname: (d.profile || {}).nickname || '', roster: d.roster || {}, shiftTimesEffective: d.shiftTimesEffective || {}, shiftNames: d.shiftNames || {},
     plan7: d.plan7 || [], workouts: (d.workouts || []).filter(w => w.date >= from), activities: (d.activities || []).filter(a => a.date >= from), days,
-    current: d.current || {}, syncAt: (d.sync || {}).at || d.exportedAt || '' };
+    current: d.current || {}, gyms: d.gyms || [], syncAt: (d.sync || {}).at || d.exportedAt || '' };
 }
 async function fetchPartner(force) {
   if (!syncReady() || !C.partner || partnerBusy || !navigator.onLine) return;
@@ -878,7 +882,7 @@ function recommend(ci) {
     if (short) r.push(shortByCoach ? '教練調整：預設做 30 分鐘精簡版（頭 4 個動作）' : '時間得 30 分鐘：做精簡版（頭 4 個動作）');
     return { kind: 'gym', template: tmpl, mode, icon: '🏋️', title: (isReturn ? '回歸訓練：' : '') + C.workouts[tmpl].name,
              summary: `${C.phases[ph].note} ${shiftTip}`, why: why.concat(r),
-             extra: extra.concat(C.gymExtras.homeCore, 'chocoZAP 太和：平日上晝同下晝通常較少人，盡量避開放工 6–9 點。第一次用部機，記得先用輕重量試。'),
+             extra: extra.concat(C.gymExtras.homeCore, ((curGym() || {}).id === 'chocozap-taiwo' ? 'chocoZAP 太和：平日上晝同下晝通常較少人，盡量避開放工 6–9 點。' : '') + '第一次用部機，記得先用輕重量試。'),
              minimum: '最低版本：每個動作做 1 組，20 分鐘搞掂。' };
   };
 
@@ -1025,11 +1029,10 @@ function vRec(rec) {
     const pain = (day().checkin || {}).pain;
     let list = C.workouts[rec.template].exercises.filter(s => !adj().skip[s.key]);
     if (rec.mode === 'short') list = list.slice(0, 4);
-    body = `<ul class="clean">${list.map(s => {
-      const r = resolveEx(s.key, pain);
-      if (!r.key) return `<li class="muted"><s>${esc(C.exercises[s.key].name)}</s>（今日略過）</li>`;
+    body = `${gymBar()}<ul class="clean">${planItems(list, pain).map(({ s, key, from, gymFrom }) => {
+      if (!key) return `<li class="muted"><s>${esc(C.exercises[gymFrom || s.key].name)}</s>（${gymFrom ? '呢間 gym 冇機' : '今日'}略過）</li>`;
       const sets = setsFor(s, rec.template, rec.mode);
-      return `<li>${exLink(r.key, esc(C.exercises[r.key].name))} <span class="muted">${sets} × ${s.reps[0]}–${s.reps[1]}</span>${r.from ? ' <span class="chip warn">替代</span>' : ''}${musclesOf(r.key) ? `<br><span class="small muted">💪 ${esc(musclesOf(r.key))}</span>` : ''}</li>`;
+      return `<li>${exLink(key, esc(C.exercises[key].name))} <span class="muted">${sets} × ${s.reps[0]}–${s.reps[1]}</span>${from ? ' <span class="chip warn">替代</span>' : ''}${gymFromChip(gymFrom)}${musclesOf(key) ? `<br><span class="small muted">💪 ${esc(musclesOf(key))}</span>` : ''}</li>`;
     }).join('')}</ul>
     ${(() => { const c = gymCardio(rec.mode); const mins = gymMinutes(list.filter(s => resolveEx(s.key, pain).key).map(s => ({ key: s.key, n: setsFor(s, rec.template, rec.mode) })), c);
       return `<p class="small">🔥 熱身 ${C.gymExtras.warmup.minutes} 分鐘 → 🏋️ 器械 → 🏃 ${esc(c.title)}</p><p class="small muted">預計大約 ${mins} 分鐘</p>`; })()}
@@ -1248,13 +1251,14 @@ function vTrain() {
     const w = C.workouts[k];
     return `<div class="card">
       <div class="row between"><h2>${esc(w.name)}</h2>${k === next ? '<span class="chip ok">下一個</span>' : ''}</div>
-      <ul class="clean small">${w.exercises.map(s => `<li>${exLink(s.key, esc(C.exercises[s.key].name))} <span class="muted">${ph === 1 && w.phase === 2 ? 2 : s.sets} × ${s.reps[0]}–${s.reps[1]}${C.exercises[s.key].unit === 'sec' ? ' 秒' : ''}</span></li>`).join('')}</ul>
+      <ul class="clean small">${planItems(w.exercises).map(({ s, key, gymFrom }) => { const g = { key, gymFrom }; return !g.key ? `<li class="muted"><s>${esc(C.exercises[s.key].name)}</s>（呢間 gym 冇機）</li>` : `<li>${exLink(g.key, esc(C.exercises[g.key].name))}${gymFromChip(g.gymFrom)} <span class="muted">${ph === 1 && w.phase === 2 ? 2 : s.sets} × ${s.reps[0]}–${s.reps[1]}${C.exercises[s.key].unit === 'sec' ? ' 秒' : ''}</span></li>`; }).join('')}</ul>
       <button class="btn block ${k === next ? '' : 'ghost'}" data-act="startGym" data-t="${k}" data-mode="normal">開始 ${esc(w.name)}</button>
     </div>`;
   };
   const other = ph === 1 ? ['d1', 'd2', 'd3'] : ['gymA', 'gymB'];
   const hist = S.workouts.slice().sort((a, b) => b.date.localeCompare(a.date) || b.at - a.at).slice(0, 12);
   return `<div class="card hero">
+      ${gymBar()}
       <div class="big">${esc(C.phases[ph].name)}</div>
       <p>${esc(C.phases[ph].note)}</p>
       <p class="small muted">每組休息：複合動作 90–120 秒，單關節／核心 60–90 秒。熱身 5–8 分鐘踩單車或快行，完咗伸展 5 分鐘。</p>
@@ -1302,18 +1306,18 @@ function startGym(t, mode) {
   let list = C.workouts[t].exercises.filter(s => !A.skip[s.key]);
   if (mode === 'short' || mode === 'commute') list = list.slice(0, 4);
   const items = [];
-  list.forEach(s => {
-    const r = resolveEx(s.key, pain);
-    if (!r.key) return;
+  planItems(list, pain).forEach(({ s, key, from, gymFrom }) => {
+    if (!key) return;
+    const r = { key, from }, g = { gymFrom };
     const sets = setsFor(s, t, mode);
     const prog = progression(r.key, s.reps);
     let w = prog.w;
     if (mode === 'return' && w) w = roundTo(w * 0.85, C.exercises[r.key].inc);
     else if (A.deload[r.key] && w) w = roundTo(w * 0.9, C.exercises[r.key].inc);
-    items.push({ slot: s.key, key: r.key, subFrom: r.from || null, altUsed: false, reps: s.reps, note: '',
+    items.push({ slot: s.key, key: r.key, subFrom: r.from || null, gymFrom: g.gymFrom || null, altUsed: false, reps: s.reps, note: '',
                  sets: Array.from({ length: sets }, () => ({ w: w ?? '', r: '', rpe: '', done: false })) });
   });
-  S.active = { id: uid(), type: t, mode, date: today(), startedAt: Date.now(), items, pain,
+  S.active = { id: uid(), type: t, mode, date: today(), startedAt: Date.now(), items, pain, gym: (curGym() || {}).name || '',
                warm: mode === 'commute' ? null : { done: false }, cardio: mode === 'commute' ? null : Object.assign({ done: false }, gymCardio(mode)) };
   save(); UI.tab = 'train'; render(); window.scrollTo(0, 0);
 }
@@ -1324,7 +1328,7 @@ function vSession() {
     const mins = Math.round((Date.now() - a.startedAt) / 60000);
   return `<div class="card hero">
     <div class="big">${esc(workoutName({ type: a.type, mode: a.mode }))}</div>
-    <p class="small">目標 RPE ${a.mode === 'return' ? 6 : C.phases[ph].rpe}${ph === 1 ? '（頭 4 週唔好做到力竭）' : ''} · 已經 ${mins} 分鐘</p>
+    ${a.gym ? `<p class="small">🏢 ${esc(a.gym)}</p>` : ''}<p class="small">目標 RPE ${a.mode === 'return' ? 6 : C.phases[ph].rpe}${ph === 1 ? '（頭 4 週唔好做到力竭）' : ''} · 已經 ${mins} 分鐘</p>
     <p class="small muted">每組做完撳 ✓，會自動開始休息計時。RPE 10 = 一下都做唔到；7 = 仲有 3 下。</p>${rpeHelp}
     ${weightGuideHtml(!gymWorkouts().length)}
     <button class="btn block" data-act="guidedOn">▶️ 引導模式（一個一個動作帶住做）</button>
@@ -1339,7 +1343,7 @@ function vSession() {
     const wPlaceholder = ex.unit === 'kg' ? 'kg' : '—';
     return `<div class="ex">
       <div class="row" style="align-items:flex-start;flex-wrap:nowrap"><button class="thumbbtn" data-act="exInfo" data-k="${it.key}" aria-label="睇示範">${animHtml(it.key, 'sm')}</button>
-        <div class="grow"><div class="ex-name">${exLink(it.key, esc(ex.name))}</div>${it.subFrom ? '<span class="chip warn">因痛替代</span>' : ''}
+        <div class="grow"><div class="ex-name">${exLink(it.key, esc(ex.name))}</div>${it.subFrom ? '<span class="chip warn">因痛替代</span>' : ''}${gymFromChip(it.gymFrom)}
       <div class="small muted">${it.sets.length} 組 × ${it.reps[0]}–${it.reps[1]} ${unit} · 休息 ${esc(ex.rest)}</div>${musclesOf(it.key) ? `<div class="small">💪 練：${esc(musclesOf(it.key))}</div>` : ''}<button class="btn sm ghost" style="margin-top:4px" data-act="muscleMap" data-i="${i}">🧍 睇練邊度／冇呢部機？</button></div></div>
       ${C.workouts[a.type].exercises.find(s => s.key === it.slot && s.note) ? `<div class="small muted">${esc(C.workouts[a.type].exercises.find(s => s.key === it.slot).note)}</div>` : ''}
       <div class="sug">${esc(prog.text)}${warmupText(it.key, prog.w) ? '<br>' + esc(warmupText(it.key, prog.w)) : ''}</div>
@@ -1379,7 +1383,7 @@ function bikeCard(a) {
 function warmCard(a) {
   if (!a.warm) return '';
   return `<div class="card ${a.warm.done ? '' : 'hero'}"><div class="row between"><h2>🔥 熱身 ${C.gymExtras.warmup.minutes} 分鐘</h2>${a.warm.done ? '<span class="chip ok">✓ 完成</span>' : ''}</div>
-    ${a.warm.done ? '' : `<div class="opts">${Object.entries(C.gymExtras.warmupChoices).map(([k, v]) => `<button class="opt ${a.warm.choice === k ? 'on' : ''}" data-act="warmPick" data-k="${k}">${esc(v.label)}</button>`).join('')}</div>`}
+    ${a.warm.done ? '' : `<div class="opts">${choicesFor(C.gymExtras.warmupChoices).map(([k, v]) => `<button class="opt ${a.warm.choice === k ? 'on' : ''}" data-act="warmPick" data-k="${k}">${esc(v.label)}</button>`).join('')}</div>`}
     <p class="small">${a.warm.choice ? esc(C.gymExtras.warmupChoices[a.warm.choice].text) + ' → 第一部機用好輕重量做 1 組 × 12 先。' : esc(C.gymExtras.warmup.text)}</p>${exLink(a.warm.choice === 'walk' ? 'treadmill' : 'bike', a.warm.choice === 'walk' ? '跑步機點用' : '單車點用')}
     ${a.warm.done ? '' : '<button class="btn block" data-act="warmDone" style="margin-top:8px">✓ 熱身完成</button>'}</div>`;
 }
@@ -1387,7 +1391,7 @@ function cardioCard(a) {
   const c = a.cardio;
   if (!c) return '';
   return `<div class="card"><div class="row between"><h2>🏃 帶氧收尾：${esc(c.title)}</h2>${c.done ? '<span class="chip ok">✓ 完成</span>' : ''}</div>
-    ${c.done ? '' : `<p class="small muted" style="margin:4px 0">揀部機（時間同強度跟今日狀態）：</p><div class="opts">${Object.entries(C.gymExtras.cardioChoices).map(([k, v]) => `<button class="opt ${c.choice === k ? 'on' : ''}" data-act="cardioPick" data-k="${k}">${esc(v.label)}</button>`).join('')}</div>`}
+    ${c.done ? '' : `<p class="small muted" style="margin:4px 0">揀部機（時間同強度跟今日狀態）：</p><div class="opts">${choicesFor(C.gymExtras.cardioChoices).map(([k, v]) => `<button class="opt ${c.choice === k ? 'on' : ''}" data-act="cardioPick" data-k="${k}">${esc(v.label)}</button>`).join('')}</div>`}
     <p class="small">${esc(c.text)}</p>${c.key ? exLink(c.key, c.key === 'bike' ? '單車點用' : '跑步機點用') : ''}
     <p class="small muted">燃脂、練心肺都靠呢部分；做完會自動記入本週帶氧（${c.minutes} 分鐘）。</p>
     <button class="btn block ${c.done ? 'ghost' : ''}" data-act="cardioDone" style="margin-top:8px">${c.done ? '取消' : '✓ 帶氧做完'}</button></div>`;
@@ -1395,13 +1399,32 @@ function cardioCard(a) {
 const rpeOpts = ['', 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
 // 換動作：同一部位、仲未開始做先可以換
 // 練同樣部位嘅其他動作（gym 有嘅機／啞鈴），按重疊部位排：主要部位一樣最先
-function swapOptions(key) {
+function swapOptions(key, gy = curGym()) {
   const m = C.sore.map[key] || [], main = m[0];
-  if (!m.length) { const g = (L.items[key] || {}).group; return Object.keys(C.exercises).filter(k => k !== key && L.items[k] && L.items[k].group === g && C.exercises[k].unit !== 'bw' && !C.exercises[k].noMachine); }
-  return Object.keys(C.exercises).filter(k => k !== key && L.items[k] && C.exercises[k].unit !== 'bw' && !C.exercises[k].noMachine)
+  if (!m.length) { const g = (L.items[key] || {}).group; return Object.keys(C.exercises).filter(k => k !== key && L.items[k] && L.items[k].group === g && C.exercises[k].unit !== 'bw' && gymHas(k, gy)); }
+  return Object.keys(C.exercises).filter(k => k !== key && L.items[k] && C.exercises[k].unit !== 'bw' && gymHas(k, gy))
     .map(k => { const o = C.sore.map[k] || []; return { k, has: o.includes(main), sc: (o[0] === main ? 3 : 1) + o.filter(r => r !== main && m.includes(r)).length }; })
     .filter(x => x.has && x.sc >= 2).sort((a, b) => b.sc - a.sc).slice(0, 6).map(x => x.k);
 }
+// ---------- 每間 gym 有咩機：冇嘅機自動換做練同樣部位嘅動作 ----------
+const curGym = () => (S.gyms || []).find(g => g.id === (S.gymSel || {}).id) || (S.gyms || [])[0] || null;
+function gymHas(k, g = curGym()) { return !g || ((C.exerciseEquip || {})[k] || []).every(r => Array.isArray(r) ? r.some(x => g.eq[x]) : !!g.eq[r]); }
+function gymResolve(k, g = curGym(), used) { if (!k || gymHas(k, g)) return { key: k }; return { key: swapOptions(k, g).find(x => !used || !used.has(x)) || null, gymFrom: k }; }
+// 一日嘅動作：先按痛症換，再按 gym 有冇機換；同一日唔會換到重複動作
+function planItems(exs, pain, g = curGym()) {
+  const used = new Set(exs.map(s => s.key).filter(k => gymHas(k, g)));
+  return exs.map(s => {
+    const r = pain ? resolveEx(s.key, pain) : { key: s.key };
+    if (!r.key) return { s, key: null, from: r.from };
+    const x = gymResolve(r.key, g, used);
+    if (x.key) used.add(x.key);
+    return { s, key: x.key, from: r.from, gymFrom: x.gymFrom };
+  });
+}
+const choiceOk = k => { const g = curGym(), e = (C.choiceEquip || {})[k]; return !g || !e || !!g.eq[e]; };
+const choicesFor = o => { const e = Object.entries(o).filter(([k]) => choiceOk(k)); return e.length ? e : Object.entries(o); };
+const gymBar = () => { const g = curGym(); return `<div class="row between small" style="margin:6px 0;flex-wrap:nowrap;gap:6px"><span>🏢 ${esc(g ? g.name : '未揀 gym')}</span><button class="btn sm ghost" data-act="openGyms">轉 gym／部機清單</button></div>`; };
+const gymFromChip = k => k ? ` <span class="chip warn">🏢 冇${esc(C.exercises[k].name.split(' ')[0])}，已換</span>` : '';
 // 動作練邊度：主要部位紅、輔助部位橙
 const exLv = k => { const lv = {}; (C.sore.map[k] || []).forEach((r, i) => { lv[r] = i === 0 ? 2 : 1; }); return lv; };
 function swapItem(i, k) {
@@ -1410,6 +1433,72 @@ function swapItem(i, k) {
   const w = progression(it.key, it.reps).w;
   it.sets.forEach(x => { if (!x.done) x.w = w ?? ''; });
   save(); render(); toast(`已換做「${C.exercises[it.key].name}」`);
+}
+// ---------- 🏢 gym 清單：揀今日去邊間、剔部機、複製對方、問 Claude ----------
+function gymCoverage(g) {
+  const rot = C.phases[phase()].rotation, its = rot.flatMap(t => planItems(C.workouts[t].exercises, null, g));
+  const keys = [...new Set(its.map(x => x.s.key))], fin = new Set(its.map(x => x.key).filter(Boolean));
+  const sw = new Map(), miss = new Set();
+  its.forEach(x => { if (!x.gymFrom) return; const nm = C.exercises[x.gymFrom].name.split(' ')[0]; if (x.key) sw.set(nm + ' → ' + C.exercises[x.key].name.split(' ')[0], 1); else miss.add(nm); });
+  const swaps = [...sw.keys()].filter(t => !miss.has(t.split(' → ')[0])), missL = [...miss];
+  const extra = Object.keys(C.exerciseEquip || {}).filter(k => !keys.includes(k) && !fin.has(k) && L.items[k] && gymHas(k, g)).map(k => C.exercises[k].name.split(' ')[0]);
+  return `<p class="small">計劃 ${keys.length} 個動作：${keys.filter(k => gymHas(k, g)).length} 個照做${swaps.length ? `；<b>自動換</b>：${esc(swaps.join('、'))}` : ''}${missL.length ? `；<b style="color:var(--warn)">冇得換（會略過）</b>：${esc(missL.join('、'))}` : ''}</p>
+    ${extra.length ? `<p class="small muted">呢間做得到、但計劃未用嘅動作：${esc(extra.join('、'))}（訓練時可以用「🧍 睇練邊度」換）</p>` : ''}`;
+}
+function gymsModal() {
+  const cur = curGym(), ed = UI.gymEdit && (S.gyms || []).find(g => g.id === UI.gymEdit);
+  if (ed) {
+    const cats = [...new Set(Object.values(C.equipment).map(e => e.cat))];
+    const n = Object.keys(C.equipment).filter(k => ed.eq[k]).length;
+    modal(`<h2>🏢 ${esc(ed.name)}</h2>
+      <label class="f">名<input id="gName" value="${esc(ed.name)}" maxlength="30"></label>
+      <p class="small muted">撳相剔返呢間 gym 有嘅機（✓ = 有）。已揀 <b id="gCount">${n}</b> 樣。</p>
+      ${cats.map(c => `<h3>${esc(c)}</h3><div class="eq-grid">${Object.entries(C.equipment).filter(([, e]) => e.cat === c).map(([k, e]) =>
+        `<button class="eq-tile ${ed.eq[k] ? 'on' : ''}" data-act="eqToggle" data-k="${k}"><img src="${e.img}" alt="" loading="lazy"><span>${ed.eq[k] ? '✓ ' : ''}${esc(e.name)}</span></button>`).join('')}</div>`).join('')}
+      <div class="card" style="margin-top:12px" id="gSum">${gymCoverage(ed)}</div>
+      <button class="btn block" data-act="gymSaveName">✅ 完成</button>
+      ${S.gyms.length > 1 ? '<div style="height:8px"></div><button class="btn block danger" data-act="gymDel">刪除呢間 gym</button>' : ''}`);
+    return;
+  }
+  const pg = ((PT.data && PT.data.gyms) || []).filter(x => !(S.gyms || []).some(g => g.name === x.name));
+  const full = !S.aiPromptAt;
+  modal(`<h2>🏢 我嘅 gym</h2>
+    <p class="small muted">揀今日去邊間。撳「部機」剔返嗰間有咩機：計劃入面冇嘅機，App 會自動換做練同樣部位嘅動作。</p>
+    ${(S.gyms || []).map(g => `<div class="row" style="margin:6px 0;flex-wrap:nowrap;gap:6px">
+      <button class="btn sm ${cur && g.id === cur.id ? '' : 'ghost'} grow" style="text-align:left" data-act="gymPick" data-id="${g.id}">${cur && g.id === cur.id ? '✓ ' : ''}${esc(g.name)}<br><span class="small">${Object.keys(C.equipment).filter(k => g.eq[k]).length} 樣器材</span></button>
+      <button class="btn sm ghost" data-act="gymEdit" data-id="${g.id}">部機</button></div>`).join('')}
+    <div class="row" style="flex-wrap:nowrap;gap:6px"><input id="gNew" placeholder="新 gym，例如：大埔體育館健身室" style="margin:0;flex:1"><button class="btn sm" data-act="gymAdd">＋ 新增</button></div>
+    ${pg.length ? `<h3 style="margin-top:14px">📥 複製${esc(partnerNick())}嘅 gym</h3>${pg.map(g => `<button class="btn sm ghost block" style="margin:4px 0" data-act="gymCopy" data-id="${g.id}">${esc(g.name)}（${Object.keys(C.equipment).filter(k => (g.eq || {})[k]).length} 樣器材）</button>`).join('')}` : ''}
+    <h3 style="margin-top:14px">🤖 問 Claude（用 iPhone 嘅 Claude App）</h3>
+    <p class="small muted">撳一下複製問題，再貼去 Claude App。第一次用「完整版」等佢知你背景；同一個對話之後用「精簡版」就得。想永久改計劃，返屋企叫 Claude Code 改。</p>
+    <div class="grid2"><button class="btn ${full ? '' : 'ghost'}" data-act="aiCopy" data-full="1">📋 完整版${full ? '（建議）' : ''}</button><button class="btn ${full ? 'ghost' : ''}" data-act="aiCopy" data-full="">📋 精簡版${full ? '' : '（建議）'}</button></div>
+    <div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`);
+}
+function aiPrompt(full) {
+  const g = curGym(), ph = phase(), rot = C.phases[ph].rotation;
+  const has = g ? Object.keys(C.equipment).filter(k => g.eq[k]).map(k => C.equipment[k].name) : [];
+  const not = g ? Object.keys(C.equipment).filter(k => !g.eq[k]).map(k => C.equipment[k].name) : [];
+  const plan = rot.map(t => { const w = C.workouts[t]; return `- ${w.name}：` + planItems(w.exercises).map(({ s, key }) => { const nm = C.exercises[s.key].name; const set = `${s.sets}×${s.reps[0]}–${s.reps[1]}`;
+    return key === s.key ? `${nm} ${set}` : key ? `${nm}（冇機 → App 換咗做 ${C.exercises[key].name}）${set}` : `${nm}（冇機，略過）`; }).join('；'); });
+  const keys = [...new Set(rot.flatMap(t => planItems(C.workouts[t].exercises).flatMap(x => [x.s.key, x.key])).filter(Boolean))];
+  const lastW = keys.map(k => { const l = lastSetsFor(k); return l ? `- ${C.exercises[k].name}（${l.date}）：${l.sets.map(x => `${x.w != null && x.w !== '' ? x.w + 'kg' : ''}×${x.r ?? '?'}${x.rpe ? ' RPE' + x.rpe : ''}`).join('、')}` : null; }).filter(Boolean);
+  const weeks = weeklySummaries(4).map(w => `- ${w.weekStart} 嗰週：gym ${w.gym} 次、帶氧 ${w.cardio} 分鐘${w.avgWeight ? `、平均體重 ${w.avgWeight}kg` : ''}`);
+  const from = addDays(today(), -14);
+  const sore = Object.entries(S.days).filter(([d, v]) => d >= from && v.sore && Object.keys(v.sore.r || {}).length).map(([d, v]) => `- ${d}：${Object.entries(v.sore.r).map(([k, l]) => SORE[k] + (l >= 2 ? '（好酸）' : '')).join('、')}`);
+  const gymLines = g ? [`而家去嘅 gym：${g.name}`, `有：${has.join('、') || '（未剔）'}`, `冇：${not.join('、')}`] : ['未揀 gym'];
+  const ask = ['請根據呢間 gym 嘅器材：', '1. 評估我而家嘅計劃，有咩動作應該換、點換（只用呢間有嘅器材）。', '2. 建議每週 2–3 次嘅全身計劃：動作、組數、次數、休息時間，用表格。', '3. 新機要注意嘅姿勢重點（每部 1–2 句）。', '答案簡短，用繁體中文（香港口語）。'];
+  if (!full) return ['（延續之前嘅背景）', ...gymLines, '', '而家嘅計劃：', ...plan, '', '最近重量：', ...(lastW.length ? lastW : ['- 未有紀錄']), ...(sore.length ? ['', '最近酸痛：', ...sore] : []), '', '請按呢間 gym 嘅器材，話我下次點練（動作、組數、次數），用表格，簡短。'].join('\n');
+  const lw = latestWeight(), comp = S.body.filter(b => b.fat != null || b.muscle != null).sort((a, b) => a.date.localeCompare(b.date)).pop();
+  const me = [S.profile.heightCm ? `身高 ${S.profile.heightCm}cm` : '', lw ? `最近體重 ${lw}kg` : '', comp ? `身體組成（${comp.date}）：${comp.fat != null ? '體脂 ' + comp.fat + '%' : ''}${comp.muscle != null ? '、肌肉量 ' + comp.muscle + 'kg' : ''}` : ''].filter(Boolean).join('；');
+  return ['你係我嘅健身教練。我用緊一個自己整嘅健身 App 記錄訓練，以下係背景同最新資料，之後我會喺同一個對話再問你。', '',
+    '## 背景', `- ${C.aiBackground || ''}`, me ? `- ${me}` : '', `- 開始日期 ${S.profile.startDate}，而家第 ${weekNo()} 週，${C.phases[ph].name}，目標 RPE ${C.phases[ph].rpe}`,
+    '', '## 原則（一定要跟）', ...(C.aiRules || []).map(x => '- ' + x),
+    '', '## Gym', ...gymLines.map(x => '- ' + x),
+    '', '## 而家嘅計劃（輪流做）', ...plan,
+    '', '## 最近 4 週', ...weeks,
+    '', '## 每個動作最近一次', ...(lastW.length ? lastW : ['- 未有紀錄']),
+    ...(sore.length ? ['', '## 最近 2 週酸痛', ...sore] : []),
+    '', '## 想你做', ...ask].filter(x => x !== '').join('\n').replace(/\n## /g, '\n\n## ');
 }
 function muscleModal() {
   const { i, k } = UI.mm, it = S.active.items[i], lv = exLv(k), canSwap = !it.sets.some(x => x.done);
@@ -1493,8 +1582,8 @@ function finishGym() {
   const done = a.items.some(it => it.sets.some(s => s.done));
   if (!done && !confirm('未剔任何一組，都要儲存嗎？')) return;
   const minutes = Math.max(1, Math.round((Date.now() - a.startedAt) / 60000));
-  S.workouts.push({ id: a.id, at: Date.now(), date: a.date, type: a.type, mode: a.mode, minutes, pain: a.pain,
-    exercises: a.items.map(it => ({ key: it.key, slot: it.slot, subFrom: it.subFrom, altUsed: it.altUsed, note: it.note,
+  S.workouts.push({ id: a.id, at: Date.now(), date: a.date, type: a.type, mode: a.mode, minutes, pain: a.pain, gym: a.gym || undefined,
+    exercises: a.items.map(it => ({ key: it.key, slot: it.slot, subFrom: it.subFrom, gymFrom: it.gymFrom || undefined, altUsed: it.altUsed, note: it.note,
       sets: it.sets.map(s => ({ w: num(s.w), r: num(s.r), rpe: num(s.rpe), done: s.done })) })) });
   if (a.together) { const w = S.workouts.find(x => x.id === a.id); if (w) w.together = true; }
   if (a.cardio && a.cardio.done) S.activities.push({ id: uid(), at: Date.now(), date: a.date, kind: a.cardio.kind, minutes: a.cardio.minutes, intensity: a.cardio.intensity, note: 'gym 後帶氧：' + a.cardio.title, together: a.together || undefined });
@@ -1932,6 +2021,7 @@ function settingsModal() {
     <p class="small muted">傳呢條連結俾對方，用 iPhone Safari 打開 → 分享 →「加入主畫面」。對方連接同步之後，兩邊都睇到對方紀錄（底部「👫 對方」）。</p>
     <div class="row"><input readonly value="${esc(partnerUrl())}" style="margin:0;flex:1"><button class="btn sm" data-act="copyPartnerUrl">複製</button></div>
     <button class="btn block ghost" data-act="openRoster" style="margin-bottom:8px">📅 班表同上落班時間</button>
+    <button class="btn block ghost" data-act="openGyms" style="margin-bottom:8px">🏢 我嘅 gym 同部機清單／問 Claude</button>
     <label class="f">訓練階段<select id="sPhase"><option value="auto" ${p.phaseOverride === 'auto' ? 'selected' : ''}>自動（建議）</option><option value="1" ${p.phaseOverride === '1' ? 'selected' : ''}>固定第 1 階段</option><option value="2" ${p.phaseOverride === '2' ? 'selected' : ''}>固定第 2 階段</option></select></label>
     <button class="btn block" data-act="saveSettings">儲存設定</button>
     <h3 style="margin-top:20px">☁️ 多裝置同步（GitHub 私人 repo）</h3>
@@ -1971,7 +2061,7 @@ function exportData() {
     adjustments: adj(), adjustLog: S.adjustLog || [], dismissedInsights: S.insightSeen || {},
     weeklySummaries: weeklySummaries(12),
     roster: S.roster || {}, gfRoster: S.gfRoster || {}, shiftTimes: S.shiftTimes || null, shiftTimesEffective: shiftTimes(), plan7: planDays(today(), 7).map(p => ({ date: p.date, shift: p.shift, gfShift: (partnerShift(p.date) || {}).s || null, kind: p.kind, text: planText(p), together: togetherText(p.date) })),
-    meals: S.meals || [],
+    meals: S.meals || [], gyms: S.gyms || [], gymSel: S.gymSel || null,
     profile: S.profile, body: S.body, workouts: S.workouts, activities: S.activities, days: S.days, achieved: S.achieved
   };
 }
@@ -2234,6 +2324,47 @@ const actions = {
   },
   backupNow() { S.lastBackup = today(); save(); exportClaude(); render(); },
   exInfo(el) { exModal(el.dataset.k); },
+  openGyms() { UI.gymEdit = null; gymsModal(); },
+  gymPick(el) { S.gymSel = { id: el.dataset.id, upd: Date.now() }; save(); render(); gymsModal(); toast('已轉 gym：' + curGym().name); },
+  gymEdit(el) { UI.gymEdit = el.dataset.id; gymsModal(); },
+  gymAdd() {
+    const name = ($('#gNew').value || '').trim();
+    if (!name) { toast('填 gym 名先'); return; }
+    const g = { id: uid(), name, eq: {}, upd: Date.now() };
+    S.gyms.push(g); S.gymSel = { id: g.id, upd: Date.now() }; save(); render(); UI.gymEdit = g.id; gymsModal();
+  },
+  gymCopy(el) {
+    const x = ((PT.data && PT.data.gyms) || []).find(g => g.id === el.dataset.id); if (!x) return;
+    S.gyms.push({ id: uid(), name: x.name, eq: Object.assign({}, x.eq), upd: Date.now() }); save(); gymsModal(); toast('已複製：' + x.name);
+  },
+  eqToggle(el) {
+    const g = S.gyms.find(x => x.id === UI.gymEdit); if (!g) return;
+    const k = el.dataset.k; if (g.eq[k]) delete g.eq[k]; else g.eq[k] = true; g.upd = Date.now(); save();
+    el.classList.toggle('on', !!g.eq[k]); el.querySelector('span').textContent = (g.eq[k] ? '✓ ' : '') + C.equipment[k].name;
+    $('#gCount').textContent = Object.keys(C.equipment).filter(x => g.eq[x]).length; $('#gSum').innerHTML = gymCoverage(g);
+  },
+  gymSaveName() {
+    const g = S.gyms.find(x => x.id === UI.gymEdit);
+    if (g) { const n = ($('#gName').value || '').trim(); if (n && n !== g.name) { g.name = n; g.upd = Date.now(); } }
+    save(); UI.gymEdit = null; render(); gymsModal();
+  },
+  gymDel() {
+    const g = S.gyms.find(x => x.id === UI.gymEdit); if (!g || S.gyms.length < 2) return;
+    if (!confirm(`刪除「${g.name}」？`)) return;
+    S.deleted = S.deleted || {}; S.deleted[g.id] = Date.now(); S.gyms = S.gyms.filter(x => x.id !== g.id);
+    if ((S.gymSel || {}).id === g.id) S.gymSel = { id: S.gyms[0].id, upd: Date.now() };
+    save(); UI.gymEdit = null; render(); gymsModal();
+  },
+  async aiCopy(el) {
+    const text = aiPrompt(!!el.dataset.full);
+    let ok = false; try { await navigator.clipboard.writeText(text); ok = true; } catch (e) {}
+    S.aiPromptAt = Date.now(); persist();
+    modal(`<h2>${ok ? '✅ 已複製' : '📋 複製下面段字'}</h2>
+      <p class="small">打開 iPhone 嘅 Claude App，開新對話（精簡版就喺之前嗰個對話）貼上。</p>
+      <a class="btn block" href="https://claude.ai/new" target="_blank" rel="noopener">打開 Claude</a>
+      <textarea readonly style="width:100%;height:220px;margin-top:10px;font-size:12px">${esc(text)}</textarea>
+      <div style="height:8px"></div><button class="btn block ghost" data-act="openGyms">返回</button>`);
+  },
   muscleMap(el) { if (!S.active) return; const i = +el.dataset.i; UI.mm = { i, k: S.active.items[i].key }; muscleModal(); },
   mmPreview(el) { if (!UI.mm) return; UI.mm.k = el.dataset.k; muscleModal(); },
   mmSwap(el) { if (!UI.mm || !S.active) return; const i = UI.mm.i; UI.mm = null; closeModal(); swapItem(i, el.dataset.k); },
