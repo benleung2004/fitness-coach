@@ -1613,6 +1613,18 @@ function vProgress() {
       <button class="btn block" data-act="saveBody">儲存今日</button>
       <h3>每週平均體重</h3>${lineChart(weeks.map(w => ({ l: shortDate(w.weekStart), v: w.avgWeight })), 'kg')}
       <h3>腰圍</h3>${lineChart(S.body.filter(b => b.waist != null).sort((a, b) => a.date.localeCompare(b.date)).slice(-12).map(b => ({ l: shortDate(b.date), v: b.waist })), 'cm')}
+      <details><summary>🧪 身體組成（體育館／體脂磅報告，可選）</summary>
+        <p class="small muted">每 1–2 個月量一次就夠。量之前一日要飲夠水，同一部機、同一個時間量先比較得到。</p>
+        <label class="f">報告日期<input id="cDate" type="date" value="${today()}"></label>
+        <div class="grid2"><label class="f">體脂率 %<input id="cFat" type="number" inputmode="decimal" step="0.1"></label>
+        <label class="f">肌肉量 kg<input id="cMuscle" type="number" inputmode="decimal" step="0.1"></label></div>
+        <label class="f">體重 kg（可不填）<input id="cW" type="number" inputmode="decimal" step="0.1"></label>
+        <button class="btn block ghost" data-act="saveComp">儲存身體組成</button>
+      </details>
+      ${(() => { const c = S.body.filter(b => b.fat != null || b.muscle != null).sort((a, b) => a.date.localeCompare(b.date)).slice(-12);
+        if (!c.length) return '';
+        return `<h3>體脂率</h3>${lineChart(c.filter(b => b.fat != null).map(b => ({ l: shortDate(b.date), v: b.fat })), '%')}
+          <h3>肌肉量</h3>${lineChart(c.filter(b => b.muscle != null).map(b => ({ l: shortDate(b.date), v: b.muscle })), 'kg')}`; })()}
     </div>
     <div class="card"><h2>每週 gym 次數</h2>${barChart(weeks.map(w => ({ l: shortDate(w.weekStart), v: w.gym })), C.targets.gymMin)}
       <h3>每週帶氧分鐘</h3>${barChart(weeks.map(w => ({ l: shortDate(w.weekStart), v: w.cardio })), C.targets.cardioMinutes)}</div>
@@ -2297,6 +2309,15 @@ const actions = {
     if (ex) { if (w != null) ex.weight = w; if (waist != null) ex.waist = waist; ex.upd = Date.now(); }
     else S.body.push({ id: uid(), date: today(), weight: w, waist, upd: Date.now() });
     save(); render(); toast('已儲存');
+  },
+  saveComp() {
+    const d = $('#cDate').value || today(), fat = num($('#cFat').value), muscle = num($('#cMuscle').value), w = num($('#cW').value);
+    if (fat == null && muscle == null) { toast('填體脂率或者肌肉量'); return; }
+    if (d > today()) { toast('日期唔可以係將來'); return; }
+    const ex = S.body.find(b => b.date === d);
+    if (ex) { if (fat != null) ex.fat = fat; if (muscle != null) ex.muscle = muscle; if (w != null) ex.weight = w; ex.upd = Date.now(); }
+    else S.body.push({ id: uid(), date: d, weight: w, waist: null, fat, muscle, upd: Date.now() });
+    save(); render(); toast('已儲存身體組成');
   },
   async delPhoto(el) { if (confirm('刪除呢張相？')) { await photoTx('readwrite', st => st.delete(el.dataset.id)); fillPhotos(); } },
   openSettings() { settingsModal(); },
