@@ -77,7 +77,7 @@ done
   NU=$(jq .noteUpd logs/fitness-log-$(date +%F).json); NOTE=$(jq -r .noteForClaude logs/fitness-log-$(date +%F).json)
   SHA=$(gh api repos/benleung2004/fitness-data/contents/data/claude-ack.json --jq .sha 2>/dev/null)
   jq -n --argjson nu "$NU" --arg note "$NOTE" --arg reply "一句講你做咗咩" '{noteUpd:$nu, note:$note, reply:$reply, at:(now*1000|floor)}' | base64 | tr -d '\n' > /tmp/ack.b64
-  gh api -X PUT repos/benleung2004/fitness-data/contents/data/claude-ack.json -f message="claude ack" -F content=@/tmp/ack.b64 ${SHA:+-f sha=$SHA}
+  gh api -X PUT repos/benleung2004/fitness-data/contents/data/claude-ack.json -f message="claude ack" -f content="$(cat /tmp/ack.b64)" ${SHA:+-f sha=$SHA}
   ```
   App 同步時見到 `noteUpd` 一樣（即係用戶之後冇再改過）先清空，並顯示「✅ Claude 已讀」同 `reply`
 - 手動補記（App 冇記到、用戶口述）：`logs/manual-notes.md`，分析時一齊睇
