@@ -25,6 +25,12 @@ done
 
 逐張睇相（Read 工具），每餐估：蛋白質（g）、大約熱量、有冇菜、甜飲。報告用表格：日期／餐／估計蛋白質／建議。目標每日蛋白質大約 1.6 g × 體重 kg。估算只係大概，要講明。
 
+**睇完相一定要寫結果**（用戶要求）：寫去私人 repo 嘅 `data/claude-meals.json`（女朋友：`data/claude-meals-her.json`），**保留舊有 id，加新嘅**：
+```json
+{ "at": 1795520000000, "meals": { "<meal id>": { "desc": "炸雞飯、蜜糖芥末汁、雜菜、齋啡", "protein": 30, "kcal": 750, "veg": true, "at": 1795520000000 } } }
+```
+App 同步時會將結果顯示喺「飲食」頁（🤖 …），冇剔蛋白質嘅會自動剔（≥15g），然後**刪走手機入面嗰張相**（私人 repo 嘅 `meals/` 仲有，唔好刪）。上載方法同下面 `claude-ack.json` 一樣（GET 攞 sha → PUT base64）。
+
 ## Claude 要做嘅嘢
 1. 讀 `logs/` 入面**最新**嗰個 JSON（如果有舊 log，同上一個比較趨勢）。次序：
    - `noteForClaude`：用戶想改咩（可能係空，空都要主動分析）
@@ -80,6 +86,9 @@ done
   gh api -X PUT repos/benleung2004/fitness-data/contents/data/claude-ack.json -f message="claude ack" -f content="$(cat /tmp/ack.b64)" ${SHA:+-f sha=$SHA}
   ```
   App 同步時見到 `noteUpd` 一樣（即係用戶之後冇再改過）先清空，並顯示「✅ Claude 已讀」同 `reply`
+- 日子分界：凌晨 4 點前嘅紀錄計返前一日（`config.dayStartHour`，`today()`）
+- 屋企啞鈴：gym 有 `dbKg`（一隻上晒片最重）同 `plates`（[每片 kg, 片數]）；`dbWeights()` 計出做到嘅重量，`dbCap()` 建議重量唔會超過；單手動作（`DB_ONE`：高腳杯深蹲、單手划船）可以用晒兩隻嘅片
+- 快速記錄：撳咗變綠、再撳取消；activity 有 `q`（walk／commute／walkHome），水同瞓覺用 `days[*].qk` 記返原本數值
 - 手動補記（App 冇記到、用戶口述）：`logs/manual-notes.md`，分析時一齊睇
 
 ## 唔可以改嘅原則（來自原本 brief）

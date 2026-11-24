@@ -11,7 +11,8 @@ const GYM_TYPES = ['gymA', 'gymB', 'd1', 'd2', 'd3'];
 const pad = n => String(n).padStart(2, '0');
 const ds = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const pd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
-const today = () => ds(new Date());
+// 凌晨 4 點前計返前一日（夜更、宵夜唔會入錯日）
+const today = () => ds(new Date(Date.now() - ((window.CONFIG || {}).dayStartHour ?? 4) * 3600e3));
 const addDays = (s, n) => { const d = pd(s); d.setDate(d.getDate() + n); return ds(d); };
 const diffDays = (a, b) => Math.round((pd(b) - pd(a)) / 864e5); // b - a
 const weekStart = s => { const d = pd(s); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return ds(d); };
@@ -47,6 +48,7 @@ if (C.homeSeed && !S.homeSeeded) {
   if (!S.split) S.split = { homeId: h.id, pct: 0, upd: 1 };
   S.homeSeeded = true;
 }
+if (C.homeSeed && C.homeSeed.plates) { const g = (S.gyms || []).find(x => x.id === C.homeSeed.id); if (g && !g.plates && (g.upd || 0) <= 1) g.plates = C.homeSeed.plates; }
 function persist() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('儲存失敗：手機空間可能唔夠'); } }
 function save() { persist(); scheduleSync(); }
 
@@ -86,6 +88,7 @@ function mergeData(R) {
       steps: pickF('steps', x => x.steps ?? null, () => maxN(l.steps, r.steps)), sleepH: pickF('sleepH', x => x.sleepH ?? null, () => l.sleepH ?? r.sleepH ?? null),
       checkin: useR ? r.checkin : l.checkin, rec: useR ? r.rec : (l.rec ?? r.rec) };
     if (Object.keys(u).length) S.days[d].u = u;
+    const qk = pickF('qk', x => x.qk, () => l.qk || r.qk); if (qk) S.days[d].qk = qk;
     const restR = (r.restUpd || 0) > (l.restUpd || 0) ? r : l;
     if (restR.restUpd) { S.days[d].restDay = !!restR.restDay; S.days[d].restUpd = restR.restUpd; }
     const mkR = (r.makeupUpd || 0) > (l.makeupUpd || 0) ? r : l;
@@ -182,7 +185,7 @@ async function syncNow(manual) {
     }
     if (!ok) throw new Error('多部機同時同步，稍後再試');
     SY.lastSync = Date.now(); SY.lastError = ''; saveSY();
-    uploadMeals(); fetchPartner(); fetchAck();
+    uploadMeals(); fetchPartner(); fetchAck(); fetchMealNotes();
     if (manual) toast('☁️ 同步完成');
   } catch (e) {
     SY.lastError = e.message === 'auth' ? 'Token 無效、過期，或者冇呢個 repo 嘅權限' : (e.message === 'Failed to fetch' ? '連唔到 GitHub' : e.message);
@@ -208,6 +211,25 @@ async function fetchAck() {
     S.claudeAck = { at: a.at, reply: String(a.reply || '').slice(0, 1000), note: same ? S.noteForClaude : String(a.note || '').slice(0, 2000) };
     if (same) { S.noteForClaude = ''; S.noteUpd = Date.now(); toast('✅ Claude 已讀你嘅留言'); }
     save(); render();
+  } catch (e) {}
+}
+// ---------- Claude 睇完食物相：寫 data/claude-meals.json；App 記低結果，再刪走手機入面嗰張相（私人 repo 仲有） ----------
+const MEALS_ACK = USER === 'me' ? 'data/claude-meals.json' : `data/claude-meals-${USER}.json`;
+async function fetchMealNotes() {
+  try {
+    const r = await ghFetch({ headers: { Accept: 'application/vnd.github.raw' } }, MEALS_ACK);
+    if (!r.ok) return;
+    const a = JSON.parse(await r.text()), got = (a && a.meals) || {};
+    let n = 0;
+    for (const m of S.meals || []) {
+      const c = got[m.id];
+      if (!c || !m.up || (m.ai && m.ai.at >= (c.at || a.at || 0))) continue;
+      m.ai = { desc: String(c.desc || '').slice(0, 200), protein: c.protein ?? null, kcal: c.kcal ?? null, veg: c.veg ?? null, at: c.at || a.at || Date.now() };
+      if (m.protein == null && c.protein != null) { m.protein = c.protein >= 15; syncProtein(m.date); }
+      m.upd = Date.now(); n++;
+      try { await photoTx('readwrite', st => st.delete(m.id)); } catch (e) {}
+    }
+    if (n) { save(); render(); }
   } catch (e) {}
 }
 // ---------- 對方紀錄（只讀）：用同一個 token 讀對方嘅資料檔 ----------
@@ -1008,7 +1030,7 @@ function vPartner() {
     ${row('Gym', me.gym, them.gym)}${row('帶氧分鐘', me.cardio, them.cardio)}${row('平均步數', me.avgSteps, them.avgSteps)}${row('平均瞓', me.avgSleep, them.avgSleep)}${row('記錄日數', me.logDays, them.logDays)}${row('👫 一齊做（日）', tog(S.workouts.concat(S.activities)), tog(P.workouts.concat(P.activities)))}</table>
     <p class="small muted">${who}上次同步：${P.syncAt ? esc(P.syncAt.slice(5, 16).replace('T', ' ')) : '–'}。只可以睇，改唔到對方紀錄。</p></div>
     <div class="card"><h2>最近 7 日（${who}）</h2>${items.length ? items.map(x => `<div class="list-item"><div><b>${fmtDate(x.date)}</b> ${x.html}</div></div>`).join('') : '<p class="muted small">呢 7 日未有紀錄。</p>'}</div>
-    <div class="card"><h2>未來 7 日</h2>${Array.from({ length: 7 }, (_, i) => addDays(today(), i)).map(d => { const pp = plan.find(p => p.date === d); const tw = togetherText(d);
+    <div class="card"><h2>👫 兩個人嘅未來 7 日</h2>${Array.from({ length: 7 }, (_, i) => addDays(today(), i)).map(d => { const pp = plan.find(p => p.date === d); const tw = togetherText(d);
       return `<div class="list-item"><div><b>${shortDate(d)} ${WD[pd(d).getDay()]}</b> <span class="small">我：${esc(rosterShift(d) ? (C.shifts[rosterShift(d)] || {}).name || '' : '–')} · ${who}：${esc(shiftOf(d) || '–')}</span>
         ${pp && pp.text ? `<div class="small muted">${who}：${esc(pp.text)}</div>` : ''}${tw ? `<div class="small">${esc(tw)}</div>` : ''}</div></div>`; }).join('')}</div>`;
 }
@@ -1135,14 +1157,14 @@ function vToday() {
   const insCard = ins.length ? `<div class="card"><div class="row between"><h2>🧠 教練觀察</h2><button class="btn sm ghost" data-tab="progress">睇全部</button></div>${ins.map(insightHtml).join('')}</div>` : '';
   let safety = '';
   if (syncReady() && SY.lastError) safety = `<div class="card"><b>☁️ 同步有問題</b><p class="small muted">${esc(SY.lastError)}。紀錄仍然安全存喺呢部機。</p><button class="btn sm ghost" data-act="openSettings">去設定</button></div>`;
-  else if (!syncReady() && (S.workouts.length || S.activities.length) && (!S.lastBackup || diffDays(S.lastBackup, today()) >= 7)) safety = `<div class="card"><b>💾 一個禮拜冇備份</b><p class="small muted">開咗同步就唔使理呢個；未開就撳一下匯出備份（存去 iCloud 雲碟或者 AirDrop 去 Mac）。</p><div class="row"><button class="btn sm" data-act="backupNow">一撳備份</button><button class="btn sm ghost" data-act="openSettings">設定同步</button></div></div>`;
+  else if (!syncReady() && (S.workouts.length || S.activities.length) && (!S.lastBackup || diffDays(S.lastBackup, today()) >= 7)) safety = `<div class="card"><b>💾 一個禮拜冇備份</b><p class="small muted">未開同步：撳一下備份就得。</p><div class="row"><button class="btn sm" data-act="backupNow">一撳備份</button><button class="btn sm ghost" data-act="openSettings">設定同步</button></div></div>`;
   return `${review}${safety}${main}${soreCard()}${insCard}${vPlanCard()}
   <div class="grid2" style="margin-bottom:12px">
     <button class="btn blue" data-act="dunno">🤷 唔知今日做咩</button>
     <button class="btn ghost" data-act="lowMode">🌙 好攰／夜更模式</button>
   </div>
   <div class="card">
-    <div class="row between"><h2>今日清單</h2><span class="small muted">撳一下就完成</span></div>
+    <h2>今日清單</h2>
     <div class="checks">${items.map(([k, ic, l, sub]) => {
       const on = x.check[k] || auto[k];
       return `<button class="check ${on ? 'on' : ''}" data-act="toggleCheck" data-k="${k}"><span class="ic">${ic}</span>${l}<span class="sub">${esc(sub)}</span></button>`;
@@ -1154,15 +1176,10 @@ function vToday() {
   </div>
   ${vWatchCard(x)}
   <div class="card">
-    <h2>快速記錄</h2>
-    <div class="quick">
-      <button class="btn ghost" data-act="quickGym">✅ Gym 做完</button>
-      <button class="btn ghost" data-act="logAct" data-kind="walk" data-min="30">🚶 行咗 30 分鐘</button>
-      ${C.commute ? '<button class="btn ghost" data-act="logAct" data-kind="cycle" data-min="30" data-commute="1">🚲 踩單車返工／放工</button>' : '<button class="btn ghost" data-act="logAct" data-kind="walk" data-min="20" data-commute="1">🚶 行路返工／放工</button>'}
-      <button class="btn ghost" data-act="water2L">💧 飲咗 2L 水</button>
-      <button class="btn ghost" data-act="slept7">😴 瞓咗 7 粒鐘</button>
-      ${C.commute ? `<button class="btn ghost" data-act="logAct" data-kind="walk" data-min="105" data-km="${C.rules.commuteKm}" data-commute="1">🏠 行返屋企</button>` : '<button class="btn ghost" data-act="logAct" data-kind="hike" data-min="60">⛰️ 行山</button>'}
-      <button class="btn ${x.restDay ? '' : 'ghost'}" data-act="toggleRestDay" style="grid-column:1/-1">${x.restDay ? '↩️ 取消：今日都做運動' : '😌 今日唔做運動（休息，行路照計）'}</button>
+    <div class="row between"><h2>快速記錄</h2><span class="small muted">綠色 = 已記錄，再撳取消</span></div>
+    <div class="quick">${quickBtns().map(([q, label, extra]) => { const on = quickOn(q);
+      return `<button class="btn ${on ? '' : 'ghost'}" data-act="quickToggle" data-q="${q}" ${extra || ''}>${on ? '✓ ' : ''}${label}</button>`; }).join('')}
+      <button class="btn ${x.restDay ? '' : 'ghost'}" data-act="toggleRestDay" style="grid-column:1/-1">${x.restDay ? '✓ 今日休息（撳取消）' : '😌 今日唔做運動'}</button>
     </div>
   </div>
   <div class="card">
@@ -1173,16 +1190,28 @@ function vToday() {
     ${wx.known ? `<p class="small muted">🌤️ ${esc(wx.text)}</p>` : ''}
   </div>`;
 }
+// ---------- 快速記錄：撳一下記低，綠色 = 已記錄，再撳就取消 ----------
+const quickBtns = () => [
+  ['gym', '✅ Gym 做完'], ['walk', '🚶 行咗路', 'data-kind="walk" data-min="30"'],
+  C.commute ? ['commute', '🚲 踩單車返工／放工', 'data-kind="cycle" data-min="30" data-commute="1"'] : ['commute', '🚶 行路返工／放工', 'data-kind="walk" data-min="20" data-commute="1"'],
+  ['water', '💧 飲咗 2L 水'], ['sleep', '😴 瞓咗 7 粒鐘'],
+  C.commute ? ['walkHome', '🏠 行返屋企', `data-kind="walk" data-min="105" data-km="${C.rules.commuteKm}" data-commute="1"`] : ['walkHome', '⛰️ 行山', 'data-kind="hike" data-min="60"']
+];
+function quickOn(q, d = today()) {
+  if (q === 'gym') return S.workouts.some(w => w.date === d && w.quick);
+  if (q === 'water' || q === 'sleep') return ((S.days[d] || {}).qk || {})[q] !== undefined;
+  return S.activities.some(a => a.date === d && a.q === q);
+}
 function vPlanCard() {
   if (!hasRoster()) return `<div class="card"><div class="row between"><h2>📅 班表</h2><button class="btn sm" data-act="openRoster">輸入班表</button></div>
-    <p class="small muted">入咗早／中／夜更嘅上落班時間同未來幾星期嘅班，App 會預早排好邊日去 gym、邊日行返屋企，每日問答亦會自動填班次。</p></div>`;
+    <p class="small muted">入咗班表，App 會預早排好邊日去 gym。</p></div>`;
   const plan = planDays(today(), 7);
   return `<div class="card"><div class="row between"><h2>📅 未來 7 日</h2><button class="btn sm ghost" data-act="openRoster">改班表</button></div>
     ${replanBox(plan)}
     ${plan.map((p, i) => `<div class="list-item"><div class="grow"><b>${i === 0 ? '今日' : shortDate(p.date)}（${WD[pd(p.date).getDay()]}）</b> <span class="chip">${p.shift ? esc(shiftLabel(p.shift, p.date)) : '未入班'}</span>
       <div class="small ${p.kind === 'gym' ? '' : 'muted'}">${p.kind === 'gym' && noGym() ? '🏠' : (PLAN_ICON[p.kind] || '·')} ${esc(planText(p))}</div>${togetherText(p.date) ? `<div class="small" style="color:var(--blue)">${esc(togetherText(p.date))}</div>` : ''}</div>
       ${p.kind === 'done' ? '' : `<button class="btn sm ${p.kind === 'restday' ? '' : 'ghost'}" data-act="toggleRestDay" data-d="${p.date}" aria-label="唔做運動">😌</button>`}</div>`).join('')}
-    <p class="small muted">撳 😌 = 嗰日唔做運動，訓練日會自動搬去其他日子。實際做咩，仍然會跟你當日問答（精神、痛、時間）再調整。</p>
+    <p class="small muted">撳 😌 = 嗰日唔做運動，gym 日會自動搬。</p>
     ${noGym() ? '<p class="small">🏠 未有 gym 會籍：gym 日暫時改做屋企徒手肌力。<button class="btn sm ghost" data-act="toggleNoGym">已經入咗 gym</button></p>'
       : (gymWorkouts().length ? '' : '<p class="small muted">未入 gym？<button class="btn sm ghost" data-act="toggleNoGym">暫時用其他運動代替</button></p>')}</div>`;
 }
@@ -1466,8 +1495,22 @@ function planItems(exs, pain, g = curGym()) {
   });
 }
 // 屋企啞鈴有上限（例如 2 × 10kg）：建議重量唔會超過，做多啲下就得
-const usesDb = k => ((C.exerciseEquip || {})[k] || []).some(r => r === 'dumbbells' || (Array.isArray(r) && r.length === 1 && r[0] === 'dumbbells'));
-const dbCap = (k, g, w) => (g && g.dbKg && usesDb(k) && w != null && w !== '' && w > g.dbKg) ? g.dbKg : w;
+const usesDb = k => ((C.exerciseEquip || {})[k] || []).some(r => r === 'dumbbells' || (Array.isArray(r) && r.includes('dumbbells')));
+const DB_ONE = ['gobletSquat', 'dbRow'];   // 只用一隻啞鈴：可以將兩隻嘅片都放上去
+// 有啞鈴片：計出做到嘅重量（手柄 = 最重 − 一隻上晒片），揀唔超過建議嘅最接近重量
+function dbWeights(g, one) {
+  if (!g.plates || !g.dbKg) return null;
+  const side = g.plates.flatMap(([kg, n]) => Array(Math.floor(n / 4)).fill(kg)), handle = g.dbKg - 2 * sum(side);
+  const per = one ? side.concat(side) : side, out = new Set();
+  for (let m = 0; m < 1 << per.length; m++) out.add(Math.round((handle + 2 * per.reduce((t, kg, i) => t + (m >> i & 1 ? kg : 0), 0)) * 100) / 100);
+  return [...out].sort((a, b) => a - b);
+}
+function dbCap(k, g, w) {
+  if (!g || !g.dbKg || !usesDb(k) || w == null || w === '') return w;
+  const one = DB_ONE.includes(k), ws = dbWeights(g, one), max = one ? (ws ? ws[ws.length - 1] : g.dbKg * 2) : g.dbKg;
+  if (!ws) return Math.min(w, max);
+  return ws.filter(x => x <= w).pop() ?? ws[0];
+}
 // ---------- 🏢＋🏠 gym／屋企時間分配：gym 做器械，屋企用啞鈴／徒手做埋其餘 ----------
 const SPLITS = [[0, '🏢 全部喺 gym'], [25, 'gym 為主＋屋企少少'], [50, 'gym 一半＋屋企一半'], [75, '屋企為主＋gym 少少'], [100, '🏠 全部喺屋企']];
 const homeGym = () => { const h = (S.split || {}).homeId; return h ? (S.gyms || []).find(g => g.id === h) || null : null; };
@@ -1549,7 +1592,6 @@ function gymsModal() {
     return;
   }
   const pg = ((PT.data && PT.data.gyms) || []).filter(x => !(S.gyms || []).some(g => g.name === x.name));
-  const full = !S.aiPromptAt;
   modal(`<h2>🏢 我嘅 gym</h2>
     <p class="small muted">揀今日去邊間。撳「部機」剔返嗰間有咩機：計劃入面冇嘅機，App 會自動換做練同樣部位嘅動作。</p>
     ${(S.gyms || []).map(g => `<div class="row" style="margin:6px 0;flex-wrap:nowrap;gap:6px">
@@ -1560,9 +1602,6 @@ function gymsModal() {
     <p class="small muted">揀咗之後，今日建議會出「gym／屋企點分」：gym 做器械，屋企用你有嘅器材做埋其餘。屋企冇凳都得（地板臥推、企住肩推、俯身反向飛鳥、單手划船）。</p>
     <div class="opts"><button class="opt ${homeGym() ? '' : 'on'}" data-act="setHome" data-id="">冇／唔分</button>${(S.gyms || []).map(g => `<button class="opt ${homeGym() && homeGym().id === g.id ? 'on' : ''}" data-act="setHome" data-id="${g.id}">${esc(g.name)}</button>`).join('')}</div>
     ${pg.length ? `<h3 style="margin-top:14px">📥 複製${esc(partnerNick())}嘅 gym</h3>${pg.map(g => `<button class="btn sm ghost block" style="margin:4px 0" data-act="gymCopy" data-id="${g.id}">${esc(g.name)}（${Object.keys(C.equipment).filter(k => (g.eq || {})[k]).length} 樣器材）</button>`).join('')}` : ''}
-    <h3 style="margin-top:14px">🤖 問 Claude（用 iPhone 嘅 Claude App）</h3>
-    <p class="small muted">撳一下複製問題，再貼去 Claude App。第一次用「完整版」等佢知你背景；同一個對話之後用「精簡版」就得。想永久改計劃，返屋企叫 Claude Code 改。</p>
-    <div class="grid2"><button class="btn ${full ? '' : 'ghost'}" data-act="aiCopy" data-full="1">📋 完整版${full ? '（建議）' : ''}</button><button class="btn ${full ? 'ghost' : ''}" data-act="aiCopy" data-full="">📋 精簡版${full ? '' : '（建議）'}</button></div>
     <div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`);
 }
 function aiPrompt(full) {
@@ -1608,7 +1647,7 @@ function aiContext() {
   return [base, '',
     '## 今日', `- 日期 ${d}（星期${WD[pd(d).getDay()]}）`, ci ? `- 問答：班次 ${(C.shifts[ci.shift] || {}).name || ci.shift}、精神 ${ci.energy}、瞓 ${ci.sleepQ}、痛 ${PAIN[ci.pain] || ci.pain}、有 ${ci.time} 分鐘、想做 ${ci.pref}` : '- 今日未答問答',
     x.sleepH != null ? `- 尋晚瞓 ${x.sleepH} 小時` : '', x.sore && Object.keys(x.sore.r || {}).length ? `- 今日酸：${Object.keys(x.sore.r).map(k => SORE[k]).join('、')}` : '',
-    '', '## 兩個地方', `- gym：${g ? g.name : '未揀'}`, h ? `- 屋企（${h.name}）有：${Object.keys(C.equipment).filter(k => h.eq[k]).map(k => C.equipment[k].name).join('、') || '乜都冇（只可以徒手）'}${h.dbKg ? `；啞鈴一隻最重 ${h.dbKg}kg（定重，唔可以加），重量唔夠就加次數、放慢落、或者單手做` : ''}` : '- 未設定屋企器材',
+    '', '## 兩個地方', `- gym：${g ? g.name : '未揀'}`, h ? `- 屋企（${h.name}）有：${Object.keys(C.equipment).filter(k => h.eq[k]).map(k => C.equipment[k].name).join('、') || '乜都冇（只可以徒手）'}${h.dbKg ? `；啞鈴一隻上晒片最重 ${h.dbKg}kg${h.plates ? `（啞鈴片：${h.plates.map(([kg, n]) => kg + 'kg×' + n).join('、')}；兩隻做到：${(dbWeights(h) || []).join('／')}kg；單手一隻上晒兩隻嘅片做到：${(dbWeights(h, true) || []).slice(-4).join('／')}kg，適合高腳杯深蹲、單手划船）` : ''}，重量唔夠就加次數或者放慢落` : ''}` : '- 未設定屋企器材',
     splitOn() ? `- 用戶揀咗嘅分配：${splitLabel(splitPct(), ci && ci.time)}` : '',
     '', '## 教練（Claude）建議，一定要跟', ...(C.coachNotes || []).map(n => '- ' + n),
     '', '## 未來 7 日計劃', ...plan,
@@ -1658,7 +1697,7 @@ function aiPlanHtml(e) {
     ${e.used ? '<p class="small muted">✅ 已用呢個計劃</p>' : S.active ? '<p class="small muted">而家有訓練進行緊，完成或者取消咗先用得。</p>' : `<button class="btn sm block" data-act="aiUse" data-id="${e.id}">▶️ 用呢個計劃開始訓練</button>`}</div>`;
 }
 function aiModal() {
-  if (!aiReady()) { modal(`<h2>🤖 問 AI</h2><p>未設定 Gemini API key。去「⚙️ 設定 → 🤖 App 內問 AI」貼上 key 先用得（免費，大約 2 分鐘）。</p><button class="btn block" data-act="openSettings">去設定</button><div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`); return; }
+  if (!aiReady()) { modal(`<h2>🤖 問 AI</h2><p>未設定 Gemini key：去「⚙︎ 設定 → ⚙️ 進階設定 → 問 AI」貼上 key。</p><button class="btn block" data-act="openSettings">去設定</button><div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`); return; }
   const today_ = (S.aiLog || []).filter(a => a.date === today()).slice(-10);
   const ideas = ['今日得 40 分鐘，gym 半個鐘、其餘返屋企做', '膊頭有啲痛，今日點練？', '好攰，做個輕鬆版', '部機有人用緊，幫我換'];
   modal(`<div class="row between" style="flex-wrap:nowrap"><h2 style="margin:0">🤖 問 AI</h2><button class="btn sm ghost" data-act="closeModal">✕</button></div>
@@ -1796,16 +1835,16 @@ function vActivity() {
   return `<div class="card">
     <h2>本週帶氧</h2>
     ${progressLine('中等強度分鐘（劇烈 ×2）', ws.cardio, C.targets.cardioMinutes, '')}
-    <p class="small muted">輕鬆活動：${ws.light} 分鐘（唔計入 150，但一樣有用）。熱同濕嘅日子，踩單車或者快行好過跑步。</p>
+    <p class="small muted">輕鬆活動：${ws.light} 分鐘（唔計入目標）</p>
     ${ws.actKcal ? `<p class="small">🔥 本週活動大約燒咗 <b>${ws.actKcal} kcal</b>（估算，可能差 20–30%）</p>` : ''}
     ${wx.known ? `<p class="small muted">🌤️ ${esc(wx.text)}${wx.runBad ? ' → 今日唔建議戶外跑步' : ''}</p>` : ''}
   </div>
   <div class="card">
     <h2>記錄活動</h2>
     <div class="quick">
-      <button class="btn ghost" data-act="logAct" data-kind="walk" data-min="30">🚶 快行 30 分</button>
-      <button class="btn ghost" data-act="logAct" data-kind="cycle" data-min="30">🚲 踩單車 30 分</button>
-      <button class="btn ghost" data-act="logAct" data-kind="run" data-min="25" data-int="moderate">🏃 跑行交替 25 分</button>
+      <button class="btn ghost" data-act="logAct" data-kind="walk" data-min="30">🚶 快行</button>
+      <button class="btn ghost" data-act="logAct" data-kind="cycle" data-min="30">🚲 踩單車</button>
+      <button class="btn ghost" data-act="logAct" data-kind="run" data-min="25" data-int="moderate">🏃 跑行交替</button>
       <button class="btn ghost" data-act="logAct" data-kind="hike" data-min="60">⛰️ 行山</button>
       <button class="btn ghost" data-act="logAct" data-kind="badminton" data-min="45">🏸 羽毛球</button>
       <button class="btn ghost" data-act="logAct" data-kind="other" data-min="30">➕ 其他</button>
@@ -1816,21 +1855,15 @@ function vActivity() {
     <p class="small muted">中大 → 大埔屋企步行大約 ${C.rules.commuteKm} km（行 ${C.commute.minutes.walk} 分／踩 ${C.commute.minutes.cycle} 分）。</p>
     ${(() => { const cm = commuteAdvice(today()); return `<div class="sug"><b>今日${cm.shift ? `（${esc(C.shifts[cm.shift] ? C.shifts[cm.shift].name : cm.shift)}）` : ''}：</b>${cm.lines.map(esc).join('<br>')}</div>`; })()}
     <div class="grid2" style="margin:8px 0"><a class="btn sm ghost" href="${mapUrl('walking')}" target="_blank" rel="noopener">🗺️ 行路路線</a><a class="btn sm ghost" href="${mapUrl('bicycling')}" target="_blank" rel="noopener">🗺️ 單車路線</a></div>
-    <p class="small muted">地圖終點：${esc(S.profile.home || C.commute.homeDefault)}（可以喺 ⚙︎ 設定改）</p>
-    <ul class="clean small">${C.commute.options.map(o => `<li><b>${esc(o.level)}</b>：${esc(o.text)}</li>`).join('')}</ul>
-    <p class="small">跑步準備度：最長一次跑步記錄 <b>${longest} 分鐘</b> ${ready ? '✅ 可以考慮試跑成程（揀涼爽日子）' : `→ 要可以連續跑 ${C.rules.commuteRunReadyMinutes} 分鐘先試跑成程，之前用跑行交替`}</p>
-    <details><summary>安全同實用提示</summary><ul class="clean small">${C.commute.safety.map(s => `<li>${esc(s)}</li>`).join('')}</ul></details>
-    <div class="quick" style="margin-top:8px">
-      <button class="btn ghost" data-act="logAct" data-kind="walk" data-min="105" data-km="${C.rules.commuteKm}" data-commute="1">🚶 行返屋企</button>
-      <button class="btn ghost" data-act="logAct" data-kind="cycle" data-min="35" data-km="${C.rules.commuteKm}" data-commute="1">🚲 踩返屋企</button>
-      <button class="btn ghost" data-act="logAct" data-kind="run" data-min="50" data-km="${C.rules.commuteKm}" data-commute="1" data-int="vigorous">🏃 跑／跑行返屋企</button>
-      <button class="btn ghost" data-act="logAct" data-kind="walk" data-min="20" data-commute="1">🚶 行一段（落車後）</button>
-    </div>
+    <details><summary class="small">📖 進階、跑步準備度同安全提示</summary>
+      <ul class="clean small">${C.commute.options.map(o => `<li><b>${esc(o.level)}</b>：${esc(o.text)}</li>`).join('')}</ul>
+      <p class="small">最長一次跑步：<b>${longest} 分鐘</b> ${ready ? '✅ 可以試跑成程（揀涼爽日子）' : `→ 連續跑到 ${C.rules.commuteRunReadyMinutes} 分鐘先試跑成程`}</p>
+      <ul class="clean small">${C.commute.safety.map(s => `<li>${esc(s)}</li>`).join('')}</ul></details>
   </div>` : ''}
   <div class="card"><h2>最近活動</h2>
-    ${list.length ? list.map(a => `<div class="list-item"><div><b>${fmtDate(a.date)}</b> ${ACT_KINDS[a.kind] || a.kind}${a.commute ? '（通勤）' : ''} ${a.minutes} 分鐘${a.together ? ' 👫' : ''}
+    ${list.length ? list.map((a, i) => `${i === 5 ? '<details><summary class="small">睇更多</summary>' : ''}<div class="list-item"><div><b>${fmtDate(a.date)}</b> ${ACT_KINDS[a.kind] || a.kind}${a.commute ? '（通勤）' : ''} ${a.minutes} 分鐘${a.together ? ' 👫' : ''}
       <div class="small muted">${(() => { const e = actEstimate(a), k = actKcal(a); return esc(INTENSITY[a.intensity] || '') + (a.km ? ` · ${a.km} km` : '') + (e.kmh ? ` · ${e.kmh} km/h` : '') + (k ? ` · 約 ${k} kcal` : ''); })()}${a.note ? ' · ' + esc(a.note) : ''}</div></div>
-      <button class="btn sm ghost" data-act="delAct" data-id="${a.id}">刪除</button></div>`).join('') : '<p class="muted">未有紀錄。</p>'}
+      <button class="btn sm ghost" data-act="delAct" data-id="${a.id}">刪除</button></div>`).join('') + (list.length > 5 ? '</details>' : '') : '<p class="muted">未有紀錄。</p>'}
   </div>`;
 }
 function actModal(o) {
@@ -1846,7 +1879,7 @@ function actModal(o) {
     <label class="f">日期<input id="aDate" type="date" value="${today()}"></label>
     <label class="f">備註<input id="aNote" placeholder="例如：途經吐露港"></label>
     <label class="row f"><input type="checkbox" id="aTogether"> 👫 同${esc(C.partner.name)}一齊做</label>
-    <input type="hidden" id="aCommute" value="${o.commute ? 1 : ''}">
+    <input type="hidden" id="aCommute" value="${o.commute ? 1 : ''}"><input type="hidden" id="aQ" value="${esc(o.q || '')}">
     <div class="grid2"><button class="btn ghost" data-act="closeModal">取消</button><button class="btn" data-act="saveAct">儲存</button></div>`);
   if (o.int) $('#aInt').dataset.touched = '1';
   actEstUpdate();
@@ -2044,7 +2077,7 @@ async function fillMeals() {
   for (const el of imgs) {
     try {
       const rec = await photoTx('readonly', st => st.get(el.dataset.meal));
-      if (rec && rec.blob) { const u = URL.createObjectURL(rec.blob); mealUrls.push(u); el.src = u; } else el.replaceWith(Object.assign(document.createElement('div'), { className: 'mealph', textContent: '🖼️' }));
+      if (rec && rec.blob) { const u = URL.createObjectURL(rec.blob); mealUrls.push(u); el.src = u; } else el.replaceWith(Object.assign(document.createElement('div'), { className: 'mealph', textContent: '🍽️' }));
     } catch (e) {}
   }
 }
@@ -2052,7 +2085,10 @@ let photoUrls = [];
 async function fillPhotos() {
   const box = $('#photoBox'); if (!box) return;
   try {
-    const all = ((await photoTx('readonly', st => st.getAll())) || []).filter(p => p.kind !== 'meal');
+    // 只讀身形相：唔好將食物相都讀入嚟（會越嚟越慢）
+    const mealIds = new Set((S.meals || []).map(m => m.id)), keys = ((await photoTx('readonly', st => st.getAllKeys())) || []).filter(k => !mealIds.has(k));
+    const all = [];
+    for (const k of keys) { const p = await photoTx('readonly', st => st.get(k)); if (p && p.kind !== 'meal') all.push(p); }
     photoUrls.forEach(u => URL.revokeObjectURL(u)); photoUrls = [];
     if (!all.length) { box.innerHTML = '<p class="muted small">未有相片。</p>'; return; }
     const byDate = {};
@@ -2169,13 +2205,13 @@ function vFood() {
     : m.up ? '☁️ 已上載，Claude 睇得到' : syncReady() ? '⏳ 等上載（有網會自動上）' : '📱 只喺呢部機（開咗同步先會上載）';
   return `${C.nutritionGoal ? `<div class="card"><h2>🎯 飲食目標</h2><p class="small">${esc(C.nutritionGoal)}</p></div>` : ''}<div class="card">
     <div class="row between"><h2>📸 食物相</h2><span class="small muted">每餐影一張</span></div>
-    <p class="small muted">影相就得，唔使自己計。你同 Claude 講「睇最新 log 幫我調整」，Claude 會睇晒啲相，估蛋白質同建議點改。相只會上載去你嘅私人 repo。</p>
+    <p class="small muted">影相或者寫低食咩就得。Claude 睇完相會寫低結果，再喺手機刪走張相（私人 repo 有備份）。</p>
     ${opts('mealSlot', MEAL_SLOTS, UI.mealSlot || mealSlotNow())}
     <input id="mealNote" placeholder="寫低食咩，例如：雞扒飯、走甜奶茶" value="${esc(UI.mealDraft || '')}" style="margin:8px 0">
     <div class="grid2"><button class="btn" data-act="saveMealText">✅ 確認記錄（冇相都得）</button><label class="btn">📸 影相／揀相<input type="file" accept="image/*" id="mealFile" class="hidden"></label></div>
-    <p class="small muted" style="margin:6px 0 0">撳「確認記錄」或者影相先會儲存；下面見到「☁️」就代表 Claude 收到。</p>
     ${meals.length ? meals.map(m => `<div class="list-item" style="align-items:center">${m.text ? '<div class="mealph">📝</div>' : `<img class="mealph" data-meal="${m.id}" alt="">`}
-      <div class="grow"><b>${esc(MEAL_SLOTS[m.slot] || '')}</b>${m.note ? ` <span class="small">${esc(m.note)}</span>` : ''}<div class="small muted">${status(m)}</div>
+      <div class="grow"><b>${esc(MEAL_SLOTS[m.slot] || '')}</b>${m.note ? ` <span class="small">${esc(m.note)}</span>` : ''}
+      ${m.ai ? `<div class="small">🤖 ${esc(m.ai.desc)}${m.ai.protein != null ? ` · 蛋白質約 ${m.ai.protein}g` : ''}${m.ai.kcal ? ` · 約 ${m.ai.kcal} kcal` : ''}</div>` : `<div class="small muted">${status(m)}</div>`}
       <button class="chip" data-act="mealProtein" data-id="${m.id}" style="margin-top:4px;border:0;cursor:pointer">${m.protein === true ? '🍳 有蛋白質' : m.protein === false ? '⚪ 冇乜蛋白質' : '❓ 等 Claude 判斷'}</button></div>
       <button class="btn sm ghost" data-act="delMeal" data-id="${m.id}">刪除</button></div>`).join('') : '<p class="small muted" style="margin-top:8px">今日未有食物相。</p>'}
     ${syncReady() ? '' : '<p class="small" style="color:var(--warn)">要喺 ⚙︎ 設定開「多裝置同步」，相先會上載俾 Claude 睇。</p>'}
@@ -2184,18 +2220,14 @@ function vFood() {
     <h2>💧 今日飲水</h2>
     <div class="big">${r1(x.waterMl / 1000)} / ${tgt / 1000} L</div>
     <div class="bar"><i style="width:${Math.min(100, 100 * x.waterMl / tgt)}%"></i></div>
-    <p class="small muted">${tgt > C.targets.waterMl ? '今日有運動，目標多咗 0.5L。' : ''}一支 500ml 水樽 = 2 下「+250」。</p>
+    ${tgt > C.targets.waterMl ? '<p class="small muted">今日有運動，目標多咗 0.5L。</p>' : ''}
     <div class="grid3"><button class="btn ghost" data-act="water" data-ml="-250">−250</button><button class="btn" data-act="water" data-ml="250">+250ml</button><button class="btn" data-act="water" data-ml="500">+500ml</button></div>
   </div>
   <div class="card"><h2>🍳 蛋白質（每餐一份）</h2>
     <p class="small muted">唔使計卡路里。每餐有一份掌心大嘅蛋白質就得：${N.proteinFoods.map(esc).join('、')}。</p>
     <div class="grid3">${[1, 2, 3].map(n => `<button class="check ${x.protein >= n ? 'on' : ''}" data-act="protein" data-n="${n}"><span class="ic">${['🌅', '☀️', '🌙'][n - 1]}</span>${['第 1 餐', '第 2 餐', '第 3 餐'][n - 1]}</button>`).join('')}</div>
-    <p class="small muted" style="margin-top:8px">記食物時寫低食咗咩，會自動估有冇蛋白質同幫你剔格；估錯可以撳食物下面個掣改。只影相冇寫字，就等 Claude 睇相判斷。</p>
     <p class="small muted">${esc(N.shakeNote)}</p></div>
-  <div class="card"><h2>🥤 飲品換一換</h2>${N.drinkSwaps.map(([a, b]) => `<div class="list-item"><span>${esc(a)}</span><span>→ <b>${esc(b)}</b></span></div>`).join('')}</div>
-  <div class="card"><h2>🍜 出街食點揀</h2>${N.eatingOut.map(e => `<div class="list-item"><div><b>${esc(e.place)}</b><div class="small">${esc(e.tip)}</div></div></div>`).join('')}
-    <p class="small muted">每餐盡量加一份菜：叫「多菜」、加一碟油菜（走油），或者揀有菜嘅套餐。</p></div>
-  <div class="card"><p class="small muted">你體重本身正常，唔需要節食。目標係「多啲蛋白質 + 少啲甜飲」，肚腩會慢慢細，肌肉會慢慢多。</p></div>`;
+`;
 }
 
 // ---------- 設定 / 匯出 ----------
@@ -2205,47 +2237,47 @@ function settingsModal() {
     <label class="f">暱稱<input id="sName" value="${esc(p.nickname)}" maxlength="20"></label>
     <div class="grid2"><label class="f">身高 cm<input id="sH" type="number" value="${esc(p.heightCm)}"></label>
     <label class="f">開始日期<input id="sStart" type="date" value="${esc(p.startDate)}"></label></div>
-    <label class="row f"><input type="checkbox" id="sGf" ${p.gfMode ? 'checked' : ''}> 一齊做運動模式（同${esc(C.partner.name)}搵共同得閒時間）</label>
-    <label class="row f"><input type="checkbox" id="sNoGym" ${p.noGym ? 'checked' : ''}> 未有 gym 會籍（gym 日暫時改做屋企徒手肌力同帶氧）</label>
-    ${C.commute ? `<label class="f">屋企位置（通勤地圖終點，只存喺你嘅私人資料）<input id="sHome" value="${esc(p.home || '')}" placeholder="${esc(C.commute.homeDefault)}"></label>` : ''}
-    <h3 style="margin-top:20px">👫 ${esc(C.partner.name)}嘅頁面</h3>
-    <p class="small muted">傳呢條連結俾對方，用 iPhone Safari 打開 → 分享 →「加入主畫面」。對方連接同步之後，兩邊都睇到對方紀錄（底部「👫 對方」）。</p>
-    <div class="row"><input readonly value="${esc(partnerUrl())}" style="margin:0;flex:1"><button class="btn sm" data-act="copyPartnerUrl">複製</button></div>
-    <button class="btn block ghost" data-act="openRoster" style="margin-bottom:8px">📅 班表同上落班時間</button>
-    <button class="btn block ghost" data-act="openGyms" style="margin-bottom:8px">🏢 我嘅 gym 同部機清單／問 Claude</button>
-    <label class="f">訓練階段<select id="sPhase"><option value="auto" ${p.phaseOverride === 'auto' ? 'selected' : ''}>自動（建議）</option><option value="1" ${p.phaseOverride === '1' ? 'selected' : ''}>固定第 1 階段</option><option value="2" ${p.phaseOverride === '2' ? 'selected' : ''}>固定第 2 階段</option></select></label>
+    <label class="row f"><input type="checkbox" id="sGf" ${p.gfMode ? 'checked' : ''}> 同${esc(C.partner.name)}一齊做運動</label>
+    <label class="row f"><input type="checkbox" id="sNoGym" ${p.noGym ? 'checked' : ''}> 未有 gym 會籍</label>
+    ${C.commute ? `<label class="f">屋企位置<input id="sHome" value="${esc(p.home || '')}" placeholder="${esc(C.commute.homeDefault)}"></label>` : ''}
     <button class="btn block" data-act="saveSettings">儲存設定</button>
-    <h3 style="margin-top:20px">☁️ 多裝置同步（GitHub 私人 repo）</h3>
-    <p class="small" id="syncStatus">${esc(syncStatusText())}</p>
-    <p class="small muted">每次記錄完都會自動上傳；喺另一部機打開會自動合併。Token 只存喺呢部機，唔會匯出，亦唔會上載。相片唔同步。</p>
-    <label class="f">Repo<input id="syRepo" value="${esc(SY.repo || 'benleung2004/fitness-data')}" autocapitalize="off" autocorrect="off"></label>
-    <label class="f">呢部機叫咩（方便睇紀錄）<input id="syName" value="${esc(SY.name || '')}" placeholder="例如 iPhone、Mac"></label>
-    <label class="f">GitHub Token<input id="syToken" type="password" autocomplete="off" autocapitalize="off" placeholder="${SY.token ? '已設定（想換先填）' : 'github_pat_…'}"></label>
-    <div class="grid2"><button class="btn" data-act="connectSync">${SY.token ? '儲存並同步' : '連接並同步'}</button><button class="btn ghost" data-act="syncNowBtn" ${syncReady() ? '' : 'disabled'}>立即同步</button></div>
-    ${SY.token ? '<div style="height:8px"></div><button class="btn sm danger" data-act="disconnectSync">喺呢部機中斷同步（唔會刪資料）</button>' : ''}
-    <p class="small muted">本機保護：${UI.persisted ? '✅ 已啟用永久儲存' : '瀏覽器未確認永久儲存（加入主畫面後會較穩陣）'}</p>
-    <h3 style="margin-top:20px">🤖 App 內問 AI（Google Gemini）</h3>
-    <p class="small muted">${aiReady() ? '✅ 已設定。' : '未設定。'}喺 aistudio.google.com 攞免費 API key 貼落嚟。Key 只存喺呢部機，唔會同步、唔會匯出。</p>
-    <label class="f">Gemini API key<input id="aiKey" type="password" autocomplete="off" autocapitalize="off" placeholder="${aiReady() ? '已設定（想換先填）' : 'AIza…'}"></label>
-    <label class="f">模型（唔識就唔使改）<input id="aiModel" value="${esc(aiCfg().model || C.aiModel)}" autocapitalize="off" autocorrect="off"></label>
-    <div class="grid2"><button class="btn" data-act="aiSaveKey">儲存</button>${aiReady() ? '<button class="btn danger" data-act="aiClearKey">刪除 key</button>' : '<span></span>'}</div>
-    <h3 style="margin-top:20px">🔧 目前嘅自動調整</h3>
-    ${adjustList().length ? adjustList().map(a => `<div class="list-item"><span class="small">${esc(a.text)}</span><button class="btn sm ghost" data-act="resetAdjust" data-k="${esc(a.k)}">還原</button></div>`).join('') : '<p class="small muted">未有。教練觀察建議調整時，你撳「套用」就會出現喺度。</p>'}
-    <h3 style="margin-top:20px">🤖 交俾 Claude 調整</h3>
-    <p class="small muted">匯出你所有紀錄（唔包括相片），連埋 App 自動分析出嚟嘅「教練觀察」、做得多／做得少、動作完成率。AirDrop 或者傳去 Mac 嘅 <code>Desktop/fitness-coach/logs/</code>，再喺 Claude Code 講「睇最新 log 幫我調整」。Claude 會睇晒全部紀錄，就算你乜都唔寫都會分析。</p>
-    <label class="f">想 Claude 特別幫你改咩？（可以唔填）<textarea id="sNote" placeholder="例如：晚更好難去 gym，想改返工前 30 分鐘版本">${esc(S.noteForClaude)}</textarea></label>
+    <div style="height:8px"></div>
+    <div class="grid2"><button class="btn ghost" data-act="openRoster">📅 班表</button><button class="btn ghost" data-act="openGyms">🏢 我嘅 gym</button></div>
+    <h3 style="margin-top:20px">🤖 想 Claude 改咩？</h3>
+    <textarea id="sNote" placeholder="可以唔填，例如：晚更好難去 gym">${esc(S.noteForClaude)}</textarea>
     <div class="row between" style="margin:-4px 0 10px"><span class="small muted" id="sNoteState">打字會自動儲存</span><button class="btn sm" data-act="saveNote">💾 儲存</button></div>
     ${S.claudeAck ? `<div class="card" style="margin:0 0 10px"><p class="small"><b>✅ Claude 已讀</b>（${esc(new Date(S.claudeAck.at).toLocaleDateString('zh-HK'))}）${S.claudeAck.reply ? '：' + esc(S.claudeAck.reply) : ''}</p>${S.claudeAck.note ? `<details><summary class="small muted">睇返你之前寫咗咩</summary><p class="small muted">${esc(S.claudeAck.note).replace(/\n/g, '<br>')}</p></details>` : ''}</div>` : ''}
-    <button class="btn block blue" data-act="exportClaude">📤 匯出俾 Claude（JSON）</button>
-    <div style="height:8px"></div>
-    <button class="btn block ghost" data-act="copySummary">📋 複製文字摘要（可以直接貼俾 Claude）</button>
-    <h3 style="margin-top:20px">備份</h3>
-    <p class="small muted">匯出嘅 JSON 亦都係備份。換手機或者清咗瀏覽器資料，用「匯入」攞返。</p>
-    <label class="btn block ghost">📥 匯入 JSON 備份<input type="file" accept="application/json,.json" id="importFile" class="hidden"></label>
-    <div style="height:16px"></div>
-    <button class="btn block danger" data-act="resetAll">清除全部資料</button>
-    <p class="small muted" style="text-align:center">版本 ${esc(C.version)}</p>
-    <button class="btn block ghost" data-act="closeModal">關閉</button>`);
+    <details class="adv"><summary><b>⚙️ 進階設定</b></summary>
+      <label class="f">訓練階段<select id="sPhase"><option value="auto" ${p.phaseOverride === 'auto' ? 'selected' : ''}>自動（建議）</option><option value="1" ${p.phaseOverride === '1' ? 'selected' : ''}>固定第 1 階段</option><option value="2" ${p.phaseOverride === '2' ? 'selected' : ''}>固定第 2 階段</option></select></label>
+      <button class="btn block ghost" data-act="saveSettings">儲存階段</button>
+      <h3 style="margin-top:16px">☁️ 同步（GitHub 私人 repo）</h3>
+      <p class="small" id="syncStatus">${esc(syncStatusText())}</p>
+      <label class="f">Repo<input id="syRepo" value="${esc(SY.repo || 'benleung2004/fitness-data')}" autocapitalize="off" autocorrect="off"></label>
+      <label class="f">呢部機個名<input id="syName" value="${esc(SY.name || '')}" placeholder="例如 iPhone"></label>
+      <label class="f">GitHub Token（只存喺呢部機）<input id="syToken" type="password" autocomplete="off" autocapitalize="off" placeholder="${SY.token ? '已設定（想換先填）' : 'github_pat_…'}"></label>
+      <div class="grid2"><button class="btn" data-act="connectSync">${SY.token ? '儲存並同步' : '連接並同步'}</button><button class="btn ghost" data-act="syncNowBtn" ${syncReady() ? '' : 'disabled'}>立即同步</button></div>
+      ${SY.token ? '<div style="height:8px"></div><button class="btn sm danger" data-act="disconnectSync">喺呢部機中斷同步</button>' : ''}
+      <h3 style="margin-top:16px">🤖 問 AI（Gemini）</h3>
+      <p class="small muted">${aiReady() ? '✅ 已設定。' : ''}喺 aistudio.google.com 攞免費 key；只存喺呢部機。</p>
+      <label class="f">API key<input id="aiKey" type="password" autocomplete="off" autocapitalize="off" placeholder="${aiReady() ? '已設定（想換先填）' : 'AIza…'}"></label>
+      <label class="f">模型<input id="aiModel" value="${esc(aiCfg().model || C.aiModel)}" autocapitalize="off" autocorrect="off"></label>
+      <div class="grid2"><button class="btn" data-act="aiSaveKey">儲存</button>${aiReady() ? '<button class="btn danger" data-act="aiClearKey">刪除 key</button>' : '<span></span>'}</div>
+      <h3 style="margin-top:16px">👫 ${esc(C.partner.name)}嘅連結</h3>
+      <div class="row" style="flex-wrap:nowrap;gap:6px"><input readonly value="${esc(partnerUrl())}" style="margin:0;flex:1;min-width:0"><button class="btn sm" data-act="copyPartnerUrl">複製</button></div>
+      <h3 style="margin-top:16px">🔧 自動調整</h3>
+      ${adjustList().length ? adjustList().map(a => `<div class="list-item"><span class="small">${esc(a.text)}</span><button class="btn sm ghost" data-act="resetAdjust" data-k="${esc(a.k)}">還原</button></div>`).join('') : '<p class="small muted">未有。</p>'}
+      <h3 style="margin-top:16px">📤 匯出／備份</h3>
+      <button class="btn block ghost" data-act="exportClaude">📤 匯出 JSON（俾 Claude／備份）</button>
+      <div style="height:8px"></div>
+      <button class="btn block ghost" data-act="copySummary">📋 複製文字摘要</button>
+      <div style="height:8px"></div>
+      <label class="btn block ghost">📥 匯入 JSON 備份<input type="file" accept="application/json,.json" id="importFile" class="hidden"></label>
+      <p class="small muted">本機保護：${UI.persisted ? '✅ 已啟用永久儲存' : '未確認（加入主畫面會較穩陣）'}</p>
+      <div style="height:8px"></div>
+      <button class="btn block danger" data-act="resetAll">清除全部資料</button>
+      <p class="small muted" style="text-align:center">版本 ${esc(C.version)}</p>
+    </details>
+    <div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`);
 }
 function exportData() {
   return {
@@ -2489,6 +2521,23 @@ const actions = {
     S.workouts.push({ id: uid(), at: Date.now(), date: today(), type: t, quick: true, exercises: [] });
     save(); checkMilestones(); render(); toast('Gym 完成 ✅');
   },
+  quickToggle(el) {
+    const q = el.dataset.q, d = today(), x = day(), on = quickOn(q);
+    const kill = ids => ids.forEach(id => { S.deleted[id] = Date.now(); });
+    if (q === 'gym') {
+      if (on) { const ids = S.workouts.filter(w => w.date === d && w.quick).map(w => w.id); kill(ids); S.workouts = S.workouts.filter(w => !ids.includes(w.id)); save(); render(); toast('已取消'); return; }
+      const t = nextTemplate(); S.workouts.push({ id: uid(), at: Date.now(), date: d, type: t, quick: true, exercises: [] });
+      save(); checkMilestones(); render(); toast('Gym 完成 ✅'); return;
+    }
+    if (q === 'water' || q === 'sleep') {
+      const f = q === 'water' ? 'waterMl' : 'sleepH', qk = x.qk = x.qk || {};
+      if (on) { x[f] = qk[q]; delete qk[q]; toast('已取消'); }
+      else { qk[q] = x[f] ?? null; x[f] = q === 'water' ? Math.max(x.waterMl || 0, 2000) : 7; toast(q === 'water' ? '💧 已記錄 2L' : '😴 已記錄 7 小時'); }
+      touch(x, f); touch(x, 'qk'); save(); render(); return;
+    }
+    if (on) { const ids = S.activities.filter(a => a.date === d && a.q === q).map(a => a.id); kill(ids); S.activities = S.activities.filter(a => !ids.includes(a.id)); save(); render(); toast('已取消'); return; }
+    actModal({ kind: el.dataset.kind, min: el.dataset.min, km: el.dataset.km, commute: !!el.dataset.commute, q });
+  },
   water2L() { const x = day(); x.waterMl = Math.max(x.waterMl, 2000); touch(x, 'waterMl'); save(); render(); toast('💧 已記錄 2L'); },
   slept7() { const x = day(); x.sleepH = 7; touch(x, 'sleepH'); save(); render(); toast('😴 已記錄 7 小時'); },
   water(el) { const x = day(); x.waterMl = Math.max(0, x.waterMl + Number(el.dataset.ml)); touch(x, 'waterMl'); save(); render(); },
@@ -2575,16 +2624,7 @@ const actions = {
     if ((S.gymSel || {}).id === g.id) S.gymSel = { id: S.gyms[0].id, upd: Date.now() };
     save(); UI.gymEdit = null; render(); gymsModal();
   },
-  async aiCopy(el) {
-    const text = aiPrompt(!!el.dataset.full);
-    let ok = false; try { await navigator.clipboard.writeText(text); ok = true; } catch (e) {}
-    S.aiPromptAt = Date.now(); persist();
-    modal(`<h2>${ok ? '✅ 已複製' : '📋 複製下面段字'}</h2>
-      <p class="small">打開 iPhone 嘅 Claude App，開新對話（精簡版就喺之前嗰個對話）貼上。</p>
-      <a class="btn block" href="https://claude.ai/new" target="_blank" rel="noopener">打開 Claude</a>
-      <textarea readonly style="width:100%;height:220px;margin-top:10px;font-size:12px">${esc(text)}</textarea>
-      <div style="height:8px"></div><button class="btn block ghost" data-act="openGyms">返回</button>`);
-  },
+
   muscleMap(el) { if (!S.active) return; const i = +el.dataset.i; UI.mm = { i, k: S.active.items[i].key }; muscleModal(); },
   mmPreview(el) { if (!UI.mm) return; UI.mm.k = el.dataset.k; muscleModal(); },
   mmSwap(el) { if (!UI.mm || !S.active) return; const i = UI.mm.i; UI.mm = null; closeModal(); swapItem(i, el.dataset.k); },
@@ -2647,7 +2687,7 @@ const actions = {
     const minutes = num($('#aMin').value);
     if (!minutes || minutes <= 0) { toast('請填分鐘'); return; }
     const a = { date: $('#aDate').value || today(), kind: $('#aKind').value, minutes, intensity: $('#aInt').value,
-                km: num($('#aKm').value), commute: !!$('#aCommute').value, note: $('#aNote').value.trim(), together: $('#aTogether').checked || undefined };
+                km: num($('#aKm').value), commute: !!$('#aCommute').value, note: $('#aNote').value.trim(), together: $('#aTogether').checked || undefined, q: ($('#aQ') || {}).value || undefined };
     const e = actEstimate(a);
     if (e.kmh) a.kmh = e.kmh;
     if (e.kcal) a.kcal = e.kcal;

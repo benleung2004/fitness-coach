@@ -233,3 +233,10 @@ a.btn { text-decoration: none; }
 .bub { padding: 10px 12px; border-radius: 14px; max-width: 88%; line-height: 1.5; font-size: 15px; }
 .bub.me { align-self: flex-end; background: #173a2c; color: var(--text); }
 .bub.ai { align-self: flex-start; background: var(--card2); }
+
+/* 彈出視窗只可以上落捲，唔會左右郁 */
+.modal-box { overflow-x: hidden; overscroll-behavior: contain; touch-action: pan-y; }
+.modal-box input, .modal-box textarea, .modal-box select { max-width: 100%; min-width: 0; box-sizing: border-box; }
+.modal-box code { word-break: break-all; }
+details.adv { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 10px; }
+details.adv > summary { cursor: pointer; padding: 6px 0; }
