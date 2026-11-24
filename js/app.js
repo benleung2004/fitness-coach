@@ -1212,8 +1212,7 @@ function vPlanCard() {
       <div class="small ${p.kind === 'gym' ? '' : 'muted'}">${p.kind === 'gym' && noGym() ? '🏠' : (PLAN_ICON[p.kind] || '·')} ${esc(planText(p))}</div>${togetherText(p.date) ? `<div class="small" style="color:var(--blue)">${esc(togetherText(p.date))}</div>` : ''}</div>
       ${p.kind === 'done' ? '' : `<button class="btn sm ${p.kind === 'restday' ? '' : 'ghost'}" data-act="toggleRestDay" data-d="${p.date}" aria-label="唔做運動">😌</button>`}</div>`).join('')}
     <p class="small muted">撳 😌 = 嗰日唔做運動，gym 日會自動搬。</p>
-    ${noGym() ? '<p class="small">🏠 未有 gym 會籍：gym 日暫時改做屋企徒手肌力。<button class="btn sm ghost" data-act="toggleNoGym">已經入咗 gym</button></p>'
-      : (gymWorkouts().length ? '' : '<p class="small muted">未入 gym？<button class="btn sm ghost" data-act="toggleNoGym">暫時用其他運動代替</button></p>')}</div>`;
+</div>`;
 }
 // 本週有休息日（或者揀咗唔使補）：話你知計劃點樣改咗
 function replanBox(plan) {
@@ -2290,7 +2289,6 @@ function settingsModal() {
     <div class="grid2"><label class="f">身高 cm<input id="sH" type="number" value="${esc(p.heightCm)}"></label>
     <label class="f">開始日期<input id="sStart" type="date" value="${esc(p.startDate)}"></label></div>
     <label class="row f"><input type="checkbox" id="sGf" ${p.gfMode ? 'checked' : ''}> 同${esc(C.partner.name)}一齊做運動</label>
-    <label class="row f"><input type="checkbox" id="sNoGym" ${p.noGym ? 'checked' : ''}> 未有 gym 會籍</label>
     ${C.commute ? `<label class="f">屋企位置<input id="sHome" value="${esc(p.home || '')}" placeholder="${esc(C.commute.homeDefault)}"></label>` : ''}
     <button class="btn block" data-act="saveSettings">儲存設定</button>
     <div style="height:8px"></div>
@@ -2841,7 +2839,6 @@ const actions = {
     x.noMakeup = !x.noMakeup; x.makeupUpd = Date.now();
     save(); render(); toast(x.noMakeup ? `好，本週 gym ${C.targets.gymMin} 次就夠 😌` : '好，幫你補返 💪');
   },
-  toggleNoGym() { S.profile.noGym = !S.profile.noGym; S.profile.upd = Date.now(); save(); render(); toast(S.profile.noGym ? '已改：gym 日暫時做屋企徒手肌力' : '已改返：gym 日去 gym 💪'); },
   openRoster() { UI.rosterWho = 'me'; rosterModal(); },
   rosterWho(el) { UI.rosterWho = el.dataset.w; rosterModal(); },
   setRoster(el) {
@@ -2869,7 +2866,7 @@ const actions = {
   saveSettings() {
     const p = S.profile;
     p.nickname = $('#sName').value.trim(); p.heightCm = num($('#sH').value) || '';
-    p.startDate = $('#sStart').value || p.startDate; p.gfMode = $('#sGf').checked; p.phaseOverride = $('#sPhase').value; p.home = $('#sHome') ? $('#sHome').value.trim() : (p.home || ''); p.noGym = $('#sNoGym').checked; p.upd = Date.now();
+    p.startDate = $('#sStart').value || p.startDate; p.gfMode = $('#sGf').checked; p.phaseOverride = $('#sPhase').value; p.home = $('#sHome') ? $('#sHome').value.trim() : (p.home || ''); p.upd = Date.now();
     setNote($('#sNote').value);
     save(); closeModal(); render(); toast('已儲存設定');
   },
