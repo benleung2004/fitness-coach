@@ -1410,10 +1410,9 @@ function vSession() {
     return `<div class="ex">
       <div class="row" style="align-items:flex-start;flex-wrap:nowrap"><button class="thumbbtn" data-act="exInfo" data-k="${it.key}" aria-label="睇示範">${animHtml(it.key, 'sm')}</button>
         <div class="grow"><div class="ex-name">${exLink(it.key, esc(ex.name))}</div>${it.subFrom ? '<span class="chip warn">因痛替代</span>' : ''}${gymFromChip(it.gymFrom)}${placeChip(it.place)}
-      <div class="small muted">${it.sets.length} 組 × ${it.reps[0]}–${it.reps[1]} ${unit} · 休息 ${esc(ex.rest)}</div>${musclesOf(it.key) ? `<div class="small">💪 練：${esc(musclesOf(it.key))}</div>` : ''}<button class="btn sm ghost" style="margin-top:4px" data-act="muscleMap" data-i="${i}">🧍 睇練邊度／冇呢部機？</button></div></div>
+      <div class="small muted">${it.sets.length} 組 × ${it.reps[0]}–${it.reps[1]} ${unit} · 休息 ${esc(ex.rest)}</div>${musclesOf(it.key) ? `<div class="small">💪 練：${esc(musclesOf(it.key))}</div>` : ''}<button class="btn sm ghost" style="margin-top:4px" data-act="muscleMap" data-i="${i}">${it.sets.some(x => x.done) ? '🧍 睇練邊度' : '🔄 換動作／睇練邊度'}</button></div></div>
       ${C.workouts[a.type].exercises.find(s => s.key === it.slot && s.note) ? `<div class="small muted">${esc(C.workouts[a.type].exercises.find(s => s.key === it.slot).note)}</div>` : ''}
       <div class="sug">${esc(prog.text)}${warmupText(it.key, prog.w) ? '<br>' + esc(warmupText(it.key, prog.w)) : ''}</div>
-      ${swapSelect(it, i)}
       <details><summary>姿勢提示／冇器材點算</summary><p class="small">✅ ${esc(ex.cue)}</p><p class="small">🔁 替代：${esc(ex.sub)}</p>
         <label class="row small"><input type="checkbox" data-alt="${i}" ${it.altUsed ? 'checked' : ''}> 今次用咗替代動作（唔計入加重建議）</label></details>
       <div class="sethead"><span>組</span><span>${ex.unit === 'kg' ? '重量 kg' : '—'}</span><span>${unit}數</span><span>RPE</span><span></span></div>
@@ -1771,28 +1770,50 @@ function startAiPlan(e) {
   e.used = true; e.upd = Date.now(); UI.gi = null;
   save(); closeModal(); UI.tab = 'train'; keepAwake(true); render(); window.scrollTo(0, 0);
 }
+// 🔄 換動作頁：大人體圖、同部位替代（有相）、AI 幫你揀
+const itemGym = it => it.place === 'home' ? homeGym() : curGym();
+const thumb = k => { const l = L.items[k]; return l && l.img === 'photo' ? `<img src="img/ex/${l.imgKey || k}-0.jpg" alt="" loading="lazy" style="width:64px;height:64px;object-fit:cover;border-radius:10px;flex:0 0 64px">` : '<div class="mealph">🏋️</div>'; };
 function muscleModal() {
-  const { i, k } = UI.mm, it = S.active.items[i], lv = exLv(k), canSwap = !it.sets.some(x => x.done);
-  const alts = swapOptions(it.key);
-  modal(`<h2>🧍 ${esc(C.exercises[k].name)}</h2>
-    <p class="small">${k === it.key ? '而家做緊呢個' : '👁 預覽緊替代動作'} · 💪 ${esc(musclesOf(k))}</p>
-    <div class="body-pair"><div>${bodySvg('front', lv, false)}<div class="small muted" style="text-align:center">前面</div></div><div>${bodySvg('back', lv, false)}<div class="small muted" style="text-align:center">背面</div></div></div>
-    <p class="small muted">🟥 主要練 · 🟧 輔助</p>
-    ${k !== it.key ? `<button class="btn sm ghost" data-act="mmPreview" data-k="${it.key}">↩︎ 返去睇「${esc(C.exercises[it.key].name)}」</button>` : ''}
-    <h3 style="margin-top:12px">冇呢部機／有人用？練同樣部位：</h3>
-    ${alts.length ? alts.map(a => `<div class="row between" style="margin:6px 0;flex-wrap:nowrap;gap:6px">
+  const { i, k } = UI.mm, it = S.active.items[i], lv = exLv(k), canSwap = !it.sets.some(x => x.done), g = itemGym(it);
+  const used = new Set(S.active.items.map(x => x.key));
+  const alts = [...swapOptions(it.key, g), ...swapOptions(it.key, g, true)].filter(a => !used.has(a));
+  const ai = UI.mmAi && UI.mmAi.i === i ? UI.mmAi : null;
+  const row = a => `<div class="row" style="margin:8px 0;flex-wrap:nowrap;gap:8px;align-items:center">${thumb(a)}
       <button class="btn sm ghost grow" style="text-align:left" data-act="mmPreview" data-k="${a}">${a === k ? '👁 ' : ''}${esc(C.exercises[a].name)}<br><span class="small muted">${esc(musclesOf(a))}</span></button>
-      ${canSwap ? `<button class="btn sm" data-act="mmSwap" data-k="${a}">換</button>` : ''}</div>`).join('') : '<p class="small muted">暫時冇其他練同樣部位嘅動作。</p>'}
-    ${canSwap ? '' : '<p class="small muted">呢個動作已經做咗組，唔可以再換。</p>'}
+      ${canSwap ? `<button class="btn sm" data-act="mmSwap" data-k="${a}">換</button>` : ''}</div>`;
+  modal(`<div class="row between" style="flex-wrap:nowrap"><h2 style="margin:0">${canSwap ? '🔄 換動作' : '🧍 練邊度'}</h2><button class="btn sm ghost" data-act="closeModal">✕</button></div>
+    <p class="small" style="margin:6px 0">${k === it.key ? '而家做緊' : '👁 預覽'}：<b>${esc(C.exercises[k].name)}</b>${placeChip(it.place)}</p>
+    ${animHtml(k)}
+    <div class="body-pair sm"><div>${bodySvg('front', lv, false)}<div class="small muted" style="text-align:center">前面</div></div><div>${bodySvg('back', lv, false)}<div class="small muted" style="text-align:center">背面</div></div></div>
+    <p class="small muted">🟥 主要練 · 🟧 輔助 · 💪 ${esc(musclesOf(k))}</p>
+    ${k !== it.key ? `<div class="grid2">${canSwap ? `<button class="btn" data-act="mmSwap" data-k="${k}">✓ 換做呢個</button>` : ''}<button class="btn ghost" data-act="mmPreview" data-k="${it.key}">↩︎ 返去而家個動作</button></div>` : ''}
+    ${canSwap ? `<h3 style="margin-top:14px">練同樣部位（${esc(g ? g.name : '')}做得到）</h3>
+    ${alts.length ? alts.map(row).join('') : '<p class="small muted">呢度冇其他練同樣部位嘅動作，試吓問 AI。</p>'}
+    <h3 style="margin-top:14px">🤖 唔知揀邊個？</h3>
+    <div class="opts">${['部機有人用', '冇呢部機', '唔鍾意／做得唔舒服', '有啲痛'].map(t => `<button class="opt ${UI.mmWhy === t ? 'on' : ''}" data-act="mmWhy" data-t="${t}">${t}</button>`).join('')}</div>
+    <button class="btn block ghost" data-act="mmAsk" ${UI.mmBusy ? 'disabled' : ''} style="margin-top:6px">${UI.mmBusy ? '🤖 諗緊…' : '🤖 AI 幫我揀替代動作'}</button>
+    ${ai ? `<div class="sug small" style="margin-top:8px">${esc(ai.reply)}</div>${ai.keys.map(row).join('')}` : ''}`
+    : '<p class="small muted">呢個動作已經做咗組，唔可以再換。</p>'}
     <div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`);
 }
-const musclesOf = k => (L.items[k] || {}).muscles || '';
-function swapSelect(it, i) {
-  if (it.sets.some(x => x.done)) return '';
-  const ks = swapOptions(it.key);
-  if (!ks.length) return '';
-  return `<label class="f small" style="margin:6px 0">🔄 部機有人用／唔鍾意？換同部位動作<select data-swap="${i}"><option value="">— 唔換 —</option>${ks.map(k => `<option value="${k}">${esc(C.exercises[k].name)}${musclesOf(k) ? '（' + esc(musclesOf(k)) + '）' : ''}</option>`).join('')}</select></label>`;
+async function mmAsk() {
+  const { i } = UI.mm, it = S.active.items[i], g = itemGym(it);
+  if (!aiReady()) { toast('要先喺 ⚙︎ 設定 → 進階設定 → 問 AI 貼 key'); return; }
+  UI.mmBusy = true; muscleModal();
+  try {
+    const others = S.active.items.filter((x, k) => k !== i).map(x => x.key).join('、');
+    const q = `我而家喺${it.place === 'home' ? '屋企' : (g ? g.name : 'gym')}做緊「${C.exercises[it.key].name}」（${it.key}，練：${musclesOf(it.key)}），想換，原因：${UI.mmWhy || '冇講'}。今日其他動作：${others}（唔好揀重複）。請喺動作清單揀 1–3 個喺呢度「做得到」、練同樣主要部位嘅替代動作，放入 plan.items（type "gym"，place "${it.place === 'home' ? 'home' : 'gym'}"，sets ${it.sets.length}），reply 用 1–2 句講點解揀佢。`;
+    const r = await aiAsk(q);
+    const main = (C.sore.map[it.key] || [])[0];
+    const keys = ((r.plan && r.plan.items) || []).map(x => x.key).filter(k => k !== it.key && C.exercises[k] && gymHas(k, g) && (!main || (C.sore.map[k] || []).includes(main)));
+    UI.mmAi = { i, reply: r.reply || '', keys: [...new Set(keys)] };
+    (S.aiLog = S.aiLog || []).push({ id: uid(), at: Date.now(), upd: Date.now(), date: today(), type: 'swap', q: `換動作：${C.exercises[it.key].name}（${UI.mmWhy || '冇講原因'}）`, reply: r.reply, plan: r.plan, model: r.model, used: false });
+    S.aiLog = S.aiLog.slice(-100); persist();
+    if (!UI.mmAi.keys.length) UI.mmAi.reply += '（AI 揀嘅動作呢度做唔到或者唔係練同一個部位，試吓上面嘅選擇）';
+  } catch (e) { toast('AI 出錯：' + String(e.message || e).slice(0, 120)); }
+  UI.mmBusy = false; if (UI.mm) muscleModal();
 }
+const musclesOf = k => (L.items[k] || {}).muscles || '';
 const togetherBox = a => `<label class="row f" style="margin:0 0 10px"><input type="checkbox" data-together="1" ${a.together ? 'checked' : ''}> 👫 今次同${esc(C.partner.name)}一齊做</label>`;
 // RPE 選項文字：顯示仲剩幾多下
 const rpeLabel = v => v === '' ? '—' : v === 10 ? '10 力竭' : Number.isInteger(v) ? `${v}（剩${10 - v}下）` : `${v}（剩${Math.floor(10 - v)}–${Math.ceil(10 - v)}下）`;
@@ -1818,8 +1839,11 @@ function vGuided() {
     ${animHtml(it.key, 'lg')}
     <div class="gname">${exLink(it.key, esc(ex.name))}</div>
     ${it.subFrom ? '<span class="chip warn">因痛替代</span>' : ''}${placeChip(it.place)}
+    <div class="row" style="flex-wrap:nowrap;gap:10px;align-items:center;margin:6px 0">
+      <div class="body-pair mini" style="flex:0 0 120px">${bodySvg('front', exLv(it.key), false)}${bodySvg('back', exLv(it.key), false)}</div>
+      <div class="grow"><div class="small">💪 練：<b>${esc(musclesOf(it.key) || '—')}</b></div>
+        <button class="btn sm ghost" style="margin-top:6px" data-act="muscleMap" data-i="${i}">${it.sets.some(x => x.done) ? '🧍 睇大圖' : '🔄 換動作'}</button></div></div>
     <p class="small muted" style="margin:4px 0">✅ ${esc(ex.cue)}</p>
-    ${swapSelect(it, i)}
     <div class="sug">${esc(prog.text)}${wu ? '<br>' + esc(wu) : ''}</div>
     ${ex.unit === 'kg' ? weightGuideHtml(prog.w == null && j === 0) : ''}
     ${s ? `<div class="gset">第 ${j + 1} / ${it.sets.length} 組 · 目標 ${it.reps[0]}–${it.reps[1]} ${unit}</div>
@@ -2682,8 +2706,15 @@ const actions = {
   },
 
   muscleMap(el) { if (!S.active) return; const i = +el.dataset.i; UI.mm = { i, k: S.active.items[i].key }; muscleModal(); },
+  mmWhy(el) { UI.mmWhy = UI.mmWhy === el.dataset.t ? '' : el.dataset.t; muscleModal(); },
+  mmAsk() { mmAsk(); },
   mmPreview(el) { if (!UI.mm) return; UI.mm.k = el.dataset.k; muscleModal(); },
-  mmSwap(el) { if (!UI.mm || !S.active) return; const i = UI.mm.i; UI.mm = null; closeModal(); swapItem(i, el.dataset.k); },
+  mmSwap(el) {
+    if (!UI.mm || !S.active) return; const i = UI.mm.i, k = el.dataset.k;
+    const lg = (S.aiLog || []).filter(a => a.type === 'swap' && a.date === today()).pop();
+    if (lg && UI.mmAi && UI.mmAi.keys.includes(k)) { lg.used = true; lg.upd = Date.now(); }
+    UI.mm = null; UI.mmAi = null; UI.mmWhy = ''; closeModal(); swapItem(i, k);
+  },
   libGroup(el) { UI.libGroup = el.dataset.g; render(); },
   seenReview(el) { S.reviewSeen = el.dataset.w; save(); render(); },
   startGym(el) {
@@ -2899,7 +2930,6 @@ $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeM
 document.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset.set) { setField(t); return; }
-  if (t.dataset.swap != null && t.value && S.active) { swapItem(t.dataset.swap, t.value); return; }
   if (t.dataset.together && S.active) { S.active.together = t.checked; save(); return; }
   if (t.id === 'aInt') { t.dataset.touched = '1'; actEstUpdate(); return; }
   if (t.id === 'aKind') { actEstUpdate(); return; }

@@ -240,3 +240,6 @@ a.btn { text-decoration: none; }
 .modal-box code { word-break: break-all; }
 details.adv { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 10px; }
 details.adv > summary { cursor: pointer; padding: 6px 0; }
+.body-pair.mini { gap: 2px; }
+.body-pair.mini .body-svg { max-width: 58px; }
+.body-pair.sm .body-svg { max-width: 96px; }

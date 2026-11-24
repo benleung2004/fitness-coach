@@ -77,6 +77,7 @@ App 同步時會將結果顯示喺「飲食」頁（🤖 …），冇剔蛋白�
 - 每日欄位改動時間：`days[*].u`（例如 `waterMl`、`protein`、`sleepH`、`c.<格>`），同步以最後改嗰次為準
 - **App 內問 AI（DeepSeek 預設，或阿里雲 Qwen 國際版；Gemini API 唔支援香港）**：`aiCall()`／`aiContext()`／`dayFacts()`／`AI_SYS`，OpenAI 格式 + JSON 模式。Key 只存喺手機 `localStorage.fc_ai`，唔同步唔匯出。冇輸入嘅資料寫「未記錄」，AI 唔可以當 0。每次問答記喺 `aiLog`（`q` 問題、`reply`、`plan`、`used` 有冇用、`model`）；用咗嘅訓練 workout 有 `ai: <aiLog id>`。
   - **🌅 每日小檢討**：過咗 4 點第一次開 App（同步完）自動做一次，`aiLog` 入面 `type: 'daily'`；計劃可以係 gym（撳開始直接入引導模式）或者 activity
+  - 換動作頁：`muscleModal()`（同部位替代有相、按 gym／屋企器材篩）；「🤖 AI 幫我揀」= `mmAsk()`，`aiLog` 入面 `type: 'swap'`，AI 揀嘅動作一定要練同一個主要部位先顯示
   - workout 有 `skipped: true` 嘅動作 = 用戶撳咗跳過；`active.warm.skip`、`cardio.skip` = 跳過熱身／帶氧
   - **睇 log 時要檢查 `aiLog`**：AI 有冇違反原則（力竭、痛仲練、太多組、用咗做唔到嘅器材）、重量建議合唔合理。
   - 想 AI 以後跟你嘅建議 → 改 `js/config.js` 嘅 `coachNotes`（公開 repo，唔好寫個人數字）；供應商同預設模型 → `AI_PROVIDERS`
