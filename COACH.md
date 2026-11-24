@@ -81,7 +81,7 @@ App 同步時會將結果顯示喺「飲食」頁（🤖 …），冇剔蛋白�
 - **讀完 `noteForClaude` 一定要寫回條**（用戶要求，等手機清空個格）：用最新 log 嘅 `noteUpd`，寫去私人 repo 嘅 `data/claude-ack.json`（女朋友：`data/claude-ack-her.json`），唔好改 `fitness.json`：
   ```bash
   NU=$(jq .noteUpd logs/fitness-log-$(date +%F).json); NOTE=$(jq -r .noteForClaude logs/fitness-log-$(date +%F).json)
-  SHA=$(gh api repos/benleung2004/fitness-data/contents/data/claude-ack.json --jq .sha 2>/dev/null)
+  SHA=$(gh api repos/benleung2004/fitness-data/contents/data/claude-ack.json --jq .sha 2>/dev/null) || SHA=
   jq -n --argjson nu "$NU" --arg note "$NOTE" --arg reply "一句講你做咗咩" '{noteUpd:$nu, note:$note, reply:$reply, at:(now*1000|floor)}' | base64 | tr -d '\n' > /tmp/ack.b64
   gh api -X PUT repos/benleung2004/fitness-data/contents/data/claude-ack.json -f message="claude ack" -f content="$(cat /tmp/ack.b64)" ${SHA:+-f sha=$SHA}
   ```
