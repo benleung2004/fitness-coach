@@ -75,9 +75,11 @@ App 同步時會將結果顯示喺「飲食」頁（🤖 …），冇剔蛋白�
 - gym／屋企時間分配：`S.split = { homeId, pct, upd }`（pct = 屋企佔幾多 %：0／25／50／75／100）；邏輯 → `placedItems()`（做唔到嘅自動去另一邊，屋企優先做單關節／核心），掣 → `splitBox()`；workout 有 `split`，每個動作有 `place: 'gym'|'home'`
 - 屋企啞鈴動作（唔使凳）：`dbRow`、`floorPress`、`dbRevFly`、企住做嘅 `dbShoulderPress`；冇器材可以換先用徒手（`pushup`、`birdDog`），見 `gymResolve()`
 - 每日欄位改動時間：`days[*].u`（例如 `waterMl`、`protein`、`sleepH`、`c.<格>`），同步以最後改嗰次為準
-- **App 內問 AI（Gemini）**：`aiAsk()`／`aiContext()`／`AI_SYS`。Key 只存喺手機 `localStorage.fc_ai`，唔同步唔匯出。每次問答記喺 `aiLog`（`q` 問題、`reply`、`plan`、`used` 有冇用、`model`）；用咗嘅訓練 workout 有 `ai: <aiLog id>`。
+- **App 內問 AI（DeepSeek 預設，或阿里雲 Qwen 國際版；Gemini API 唔支援香港）**：`aiCall()`／`aiContext()`／`dayFacts()`／`AI_SYS`，OpenAI 格式 + JSON 模式。Key 只存喺手機 `localStorage.fc_ai`，唔同步唔匯出。冇輸入嘅資料寫「未記錄」，AI 唔可以當 0。每次問答記喺 `aiLog`（`q` 問題、`reply`、`plan`、`used` 有冇用、`model`）；用咗嘅訓練 workout 有 `ai: <aiLog id>`。
+  - **🌅 每日小檢討**：過咗 4 點第一次開 App（同步完）自動做一次，`aiLog` 入面 `type: 'daily'`；計劃可以係 gym（撳開始直接入引導模式）或者 activity
+  - workout 有 `skipped: true` 嘅動作 = 用戶撳咗跳過；`active.warm.skip`、`cardio.skip` = 跳過熱身／帶氧
   - **睇 log 時要檢查 `aiLog`**：AI 有冇違反原則（力竭、痛仲練、太多組、用咗做唔到嘅器材）、重量建議合唔合理。
-  - 想 AI 以後跟你嘅建議 → 改 `js/config.js` 嘅 `coachNotes`（公開 repo，唔好寫個人數字）；模型預設 → `aiModel`
+  - 想 AI 以後跟你嘅建議 → 改 `js/config.js` 嘅 `coachNotes`（公開 repo，唔好寫個人數字）；供應商同預設模型 → `AI_PROVIDERS`
 - **讀完 `noteForClaude` 一定要寫回條**（用戶要求，等手機清空個格）：用最新 log 嘅 `noteUpd`，寫去私人 repo 嘅 `data/claude-ack.json`（女朋友：`data/claude-ack-her.json`），唔好改 `fitness.json`：
   ```bash
   NU=$(jq .noteUpd logs/fitness-log-$(date +%F).json); NOTE=$(jq -r .noteForClaude logs/fitness-log-$(date +%F).json)

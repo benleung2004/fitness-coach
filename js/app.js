@@ -1158,7 +1158,7 @@ function vToday() {
   let safety = '';
   if (syncReady() && SY.lastError) safety = `<div class="card"><b>☁️ 同步有問題</b><p class="small muted">${esc(SY.lastError)}。紀錄仍然安全存喺呢部機。</p><button class="btn sm ghost" data-act="openSettings">去設定</button></div>`;
   else if (!syncReady() && (S.workouts.length || S.activities.length) && (!S.lastBackup || diffDays(S.lastBackup, today()) >= 7)) safety = `<div class="card"><b>💾 一個禮拜冇備份</b><p class="small muted">未開同步：撳一下備份就得。</p><div class="row"><button class="btn sm" data-act="backupNow">一撳備份</button><button class="btn sm ghost" data-act="openSettings">設定同步</button></div></div>`;
-  return `${review}${safety}${main}${soreCard()}${insCard}${vPlanCard()}
+  return `${review}${safety}${dailyCard()}${main}${soreCard()}${insCard}${vPlanCard()}
   <div class="grid2" style="margin-bottom:12px">
     <button class="btn blue" data-act="dunno">🤷 唔知今日做咩</button>
     <button class="btn ghost" data-act="lowMode">🌙 好攰／夜更模式</button>
@@ -1425,7 +1425,7 @@ function vSession() {
         <select data-set="${i},${j},rpe">${rpeOpts.map(v => `<option value="${v}" ${String(s.rpe) === String(v) ? 'selected' : ''}>${v === '' ? 'RPE' : rpeLabel(v)}</option>`).join('')}</select>
         <button class="setbtn ${s.done ? 'on' : ''}" data-act="doneSet" data-i="${i}" data-j="${j}">✓</button>
       </div>`).join('')}
-      <div class="row"><button class="btn sm ghost" data-act="addSet" data-i="${i}">＋ 加一組</button>
+      <div class="row"><button class="btn sm ghost" data-act="addSet" data-i="${i}">＋ 加一組</button>${curSet(it) >= 0 ? `<button class="btn sm ghost" data-act="exSkip" data-i="${i}">⏭ 跳過</button>` : ''}
         <input class="grow" placeholder="備註（例如：座位調第 4 格）" data-note="${i}" value="${esc(it.note)}" style="margin:0;padding:8px"></div>
     </div>`;
   }).join('')}</div>
@@ -1441,27 +1441,29 @@ const weightGuideHtml = open => `<details ${open ? 'open' : ''}><summary>⚖️ 
 // 踩返屋企 + 精簡 gym：踩單車當熱身同帶氧，喺「活動」紀錄度填 km／分鐘
 const commuteBike = d => S.activities.find(x => x.date === d && x.kind === 'cycle' && x.commute);
 function bikeCard(a) {
+  if (a.bikeSkip) return '';
   const b = commuteBike(a.date);
   return `<div class="card ${b ? '' : 'hero'}"><div class="row between"><h2>🚲 踩返屋企（當熱身＋帶氧）</h2>${b ? '<span class="chip ok">✓ 已記錄</span>' : ''}</div>
     ${b ? `<p class="small">${b.km ? b.km + ' km · ' : ''}${b.minutes} 分鐘${b.kmh ? ` · ${b.kmh} km/h` : ''}${actKcal(b) ? ` · 約 ${actKcal(b)} kcal` : ''}</p>`
         : `<p class="small">踩完單車已經熱咗身，唔使再熱身同做 gym 帶氧，直接做 4 個器械動作。第一組用輕少少重量試。</p>
-    <button class="btn block" data-act="logAct" data-kind="cycle" data-min="${C.commute.minutes.cycle}" data-km="${C.rules.commuteKm}" data-commute="1">記錄踩單車（填 km 同分鐘）</button>`}</div>`;
+    <div class="grid2"><button class="btn" data-act="logAct" data-kind="cycle" data-min="${C.commute.minutes.cycle}" data-km="${C.rules.commuteKm}" data-commute="1">記錄踩單車</button><button class="btn ghost" data-act="bikeSkip">⏭ 跳過</button></div>`}</div>`;
 }
 function warmCard(a) {
   if (!a.warm) return '';
   return `<div class="card ${a.warm.done ? '' : 'hero'}"><div class="row between"><h2>🔥 熱身 ${C.gymExtras.warmup.minutes} 分鐘</h2>${a.warm.done ? '<span class="chip ok">✓ 完成</span>' : ''}</div>
     ${a.warm.done ? '' : `<div class="opts">${choicesFor(C.gymExtras.warmupChoices).map(([k, v]) => `<button class="opt ${a.warm.choice === k ? 'on' : ''}" data-act="warmPick" data-k="${k}">${esc(v.label)}</button>`).join('')}</div>`}
     <p class="small">${a.warm.choice ? esc(C.gymExtras.warmupChoices[a.warm.choice].text) + ' → 第一部機用好輕重量做 1 組 × 12 先。' : esc(C.gymExtras.warmup.text)}</p>${exLink(a.warm.choice === 'walk' ? 'treadmill' : 'bike', a.warm.choice === 'walk' ? '跑步機點用' : '單車點用')}
-    ${a.warm.done ? '' : '<button class="btn block" data-act="warmDone" style="margin-top:8px">✓ 熱身完成</button>'}</div>`;
+    ${a.warm.done ? '' : '<div class="grid2" style="margin-top:8px"><button class="btn" data-act="warmDone">✓ 熱身完成</button><button class="btn ghost" data-act="warmSkip">⏭ 跳過</button></div>'}</div>`;
 }
 function cardioCard(a) {
   const c = a.cardio;
   if (!c) return '';
+  if (c.skip) return `<div class="card"><div class="row between"><h2>🏃 帶氧收尾</h2><span class="chip">⏭ 已跳過</span></div><button class="btn sm ghost" data-act="cardioSkip">還原</button></div>`;
   return `<div class="card"><div class="row between"><h2>🏃 帶氧收尾：${esc(c.title)}</h2>${c.done ? '<span class="chip ok">✓ 完成</span>' : ''}</div>
     ${c.done ? '' : `<p class="small muted" style="margin:4px 0">揀部機（時間同強度跟今日狀態）：</p><div class="opts">${choicesFor(C.gymExtras.cardioChoices).map(([k, v]) => `<button class="opt ${c.choice === k ? 'on' : ''}" data-act="cardioPick" data-k="${k}">${esc(v.label)}</button>`).join('')}</div>`}
     <p class="small">${esc(c.text)}</p>${c.key ? exLink(c.key, c.key === 'bike' ? '單車點用' : '跑步機點用') : ''}
     <p class="small muted">燃脂、練心肺都靠呢部分；做完會自動記入本週帶氧（${c.minutes} 分鐘）。</p>
-    <button class="btn block ${c.done ? 'ghost' : ''}" data-act="cardioDone" style="margin-top:8px">${c.done ? '取消' : '✓ 帶氧做完'}</button></div>`;
+    ${c.done ? '<button class="btn block ghost" data-act="cardioDone" style="margin-top:8px">取消</button>' : '<div class="grid2" style="margin-top:8px"><button class="btn" data-act="cardioDone">✓ 帶氧做完</button><button class="btn ghost" data-act="cardioSkip">⏭ 跳過</button></div>'}</div>`;
 }
 const rpeOpts = ['', 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
 // 換動作：同一部位、仲未開始做先可以換
@@ -1630,10 +1632,16 @@ function aiPrompt(full) {
     ...(sore.length ? ['', '## 最近 2 週酸痛', ...sore] : []),
     '', '## 想你做', ...ask].filter(x => x !== '').join('\n').replace(/\n## /g, '\n\n## ');
 }
-// ---------- 🤖 App 內問 AI（Google Gemini）：key 只存喺呢部機，唔會同步、唔會匯出 ----------
+// ---------- 🤖 App 內問 AI（DeepSeek／Qwen）：key 只存喺呢部機，唔會同步、唔會匯出 ----------
 const AI_KEY = 'fc_ai';
+// 香港用得、准網頁直接連（CORS）嘅 AI；Gemini API 唔支援香港
+const AI_PROVIDERS = {
+  deepseek: { name: 'DeepSeek', url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-flash', site: 'platform.deepseek.com' },
+  qwen: { name: '阿里雲 Qwen（國際版）', url: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions', model: 'qwen-plus', site: 'modelstudio.console.alibabacloud.com' }
+};
 const aiCfg = () => { try { return JSON.parse(localStorage.getItem(AI_KEY) || '{}'); } catch (e) { return {}; } };
-const aiReady = () => !!aiCfg().key;
+const aiProv = () => AI_PROVIDERS[aiCfg().provider] || null;
+const aiReady = () => !!(aiCfg().key && aiProv());
 function aiContext() {
   const base = aiPrompt(true).split('\n\n## 想你做')[0];
   const g = curGym(), h = homeGym(), d = today(), x = day(), ci = x.checkin;
@@ -1647,6 +1655,7 @@ function aiContext() {
   return [base, '',
     '## 今日', `- 日期 ${d}（星期${WD[pd(d).getDay()]}）`, ci ? `- 問答：班次 ${(C.shifts[ci.shift] || {}).name || ci.shift}、精神 ${ci.energy}、瞓 ${ci.sleepQ}、痛 ${PAIN[ci.pain] || ci.pain}、有 ${ci.time} 分鐘、想做 ${ci.pref}` : '- 今日未答問答',
     x.sleepH != null ? `- 尋晚瞓 ${x.sleepH} 小時` : '', x.sore && Object.keys(x.sore.r || {}).length ? `- 今日酸：${Object.keys(x.sore.r).map(k => SORE[k]).join('、')}` : '',
+    '', '## 琴日同今日嘅紀錄（未記錄 = 冇輸入，唔係 0）', dayFacts(addDays(d, -1)), dayFacts(d),
     '', '## 兩個地方', `- gym：${g ? g.name : '未揀'}`, h ? `- 屋企（${h.name}）有：${Object.keys(C.equipment).filter(k => h.eq[k]).map(k => C.equipment[k].name).join('、') || '乜都冇（只可以徒手）'}${h.dbKg ? `；啞鈴一隻上晒片最重 ${h.dbKg}kg${h.plates ? `（啞鈴片：${h.plates.map(([kg, n]) => kg + 'kg×' + n).join('、')}；兩隻做到：${(dbWeights(h) || []).join('／')}kg；單手一隻上晒兩隻嘅片做到：${(dbWeights(h, true) || []).slice(-4).join('／')}kg，適合高腳杯深蹲、單手划船）` : ''}，重量唔夠就加次數或者放慢落` : ''}` : '- 未設定屋企器材',
     splitOn() ? `- 用戶揀咗嘅分配：${splitLabel(splitPct(), ci && ci.time)}` : '',
     '', '## 教練（Claude）建議，一定要跟', ...(C.coachNotes || []).map(n => '- ' + n),
@@ -1657,47 +1666,90 @@ function aiContext() {
     '', '## 動作清單（key｜名｜類型｜單位｜練邊度｜邊度做得到）— plan 只可以用呢度嘅 key', ...cat
   ].filter(v => v !== '').join('\n');
 }
+// 一日嘅紀錄：冇輸入就寫「未記錄」，AI 唔會當做 0
+function dayFacts(d) {
+  const x = S.days[d] || {}, NA = '未記錄', ci = x.checkin;
+  const wk = S.workouts.filter(w => w.date === d), ac = S.activities.filter(a => a.date === d), ml = (S.meals || []).filter(m => m.date === d && !(S.deleted || {})[m.id]);
+  return [`### ${d}（星期${WD[pd(d).getDay()]}）${x.restDay ? '：用戶揀咗休息日' : ''}`,
+    `- 問答：${ci ? `班次 ${(C.shifts[ci.shift] || {}).name || ci.shift}、精神 ${ci.energy}、瞓 ${ci.sleepQ}、痛 ${PAIN[ci.pain] || ci.pain}、有 ${ci.time} 分鐘、想做 ${ci.pref}` : NA}`,
+    `- gym：${wk.length ? wk.map(w => `${workoutName(w)}${w.minutes ? ' ' + w.minutes + ' 分鐘' : ''}：` + ((w.exercises || []).map(e => `${e.key} ${e.sets.filter(s => s.done).map(s => `${s.w ?? ''}${s.w != null ? 'kg' : ''}×${s.r ?? '?'}`).join('/')}`).join('；') || '（快速記錄，冇逐組）')).join(' | ') : NA}`,
+    `- 活動：${ac.length ? ac.map(a => `${ACT_KINDS[a.kind] || a.kind} ${a.minutes} 分鐘`).join('、') : NA}`,
+    `- 飲食：${ml.length ? ml.map(m => `${MEAL_SLOTS[m.slot] || ''} ${m.note || (m.ai && m.ai.desc) || '（相，未分析）'}${m.ai && m.ai.protein != null ? `（蛋白質約 ${m.ai.protein}g）` : ''}`).join('；') : NA}`,
+    `- 瞓覺：${x.sleepH != null ? x.sleepH + ' 小時' : NA}；飲水：${x.waterMl ? x.waterMl + 'ml' : NA}；步數：${x.steps != null ? x.steps : NA}`,
+    `- 酸痛：${x.sore && Object.keys(x.sore.r || {}).length ? Object.keys(x.sore.r).map(k => SORE[k]).join('、') : NA}`].join('\n');
+}
 const AI_SYS = `你係用戶嘅健身教練，喺佢自己整嘅健身 App 入面回答。用繁體中文（香港口語），簡短、鼓勵，唔講「失敗」。
 一定要跟「原則」同「教練（Claude）建議」；唔可以建議力竭、大熱量赤字、跑步做帶氧或者游水；有痛就避開相關動作，痛持續叫佢睇醫生／物理治療師。
 如果用戶想今日點練（例如時間、地點、痛、精神），就出一個今日計劃：只用「動作清單」入面嘅 key，place 只可以係 "gym" 或 "home"，要揀嗰個地方「做得到」嘅動作；gym 嘅動作排先，屋企排後；時間要夾到佢講嘅分鐘數（熱身 5 分鐘、每組連休息複合約 2.5 分鐘、其他 2 分鐘）。
 重量建議參考「每個動作最近一次」同「最近 14 日 gym」，寫喺 note（例如「試 30kg」）；屋企啞鈴重量要按佢有嘅器材。
-只回覆一個 JSON 物件，唔好有其他字：{"reply":"俾用戶睇嘅解釋（3–6 句）","plan":null 或 {"title":"計劃名","items":[{"key":"legPress","place":"gym","sets":2,"reps":[10,12],"note":"重量／提醒"}],"cardioMin":10}}`;
+寫住「未記錄」或者冇出現嘅資料＝用戶冇輸入，唔好當做 0、唔好話佢冇做、唔好叫佢補記，只根據有記錄嘅資料講。
+如果建議今日唔去 gym，可以出帶氧／活動計劃（type "activity"，kind 只可以係 walk、cycle、hike、run、other）。
+只回覆一個 JSON 物件，唔好有其他字：{"reply":"俾用戶睇嘅解釋（3–6 句）","plan":null 或 {"type":"gym","title":"計劃名","warmup":true,"items":[{"key":"legPress","place":"gym","sets":2,"reps":[10,12],"note":"重量／提醒"}],"cardioMin":10} 或 {"type":"activity","title":"計劃名","kind":"walk","minutes":30,"note":"點做"}}`;
 function aiParse(t) {
   t = String(t || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
   const o = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
   const reply = String(o.reply || '').slice(0, 3000);
   let plan = null;
+  if (o.plan && o.plan.type === 'activity' && ACT_KINDS[o.plan.kind]) {
+    const m = Math.round(Number(o.plan.minutes) || 30);
+    return { reply, plan: { type: 'activity', title: String(o.plan.title || ACT_KINDS[o.plan.kind]).slice(0, 60), kind: o.plan.kind, minutes: Math.min(240, Math.max(5, m)), note: String(o.plan.note || '').slice(0, 200) } };
+  }
   if (o.plan && Array.isArray(o.plan.items)) {
     const items = o.plan.items.filter(it => it && C.exercises[it.key]).slice(0, 10).map(it => {
       const r = Array.isArray(it.reps) ? it.reps.map(Number).filter(n => n > 0 && n < 200).slice(0, 2) : [];
       return { key: it.key, place: it.place === 'home' ? 'home' : 'gym', sets: Math.min(5, Math.max(1, Math.round(Number(it.sets) || 2))),
         reps: r.length === 2 ? r : r.length === 1 ? [r[0], r[0]] : repsFor(it.key), note: String(it.note || '').slice(0, 200) };
     });
-    if (items.length) plan = { title: String(o.plan.title || 'AI 今日計劃').slice(0, 60), items, cardioMin: Math.min(40, Math.max(0, Math.round(Number(o.plan.cardioMin) || 0))) };
+    if (items.length) plan = { type: 'gym', warmup: o.plan.warmup !== false, title: String(o.plan.title || 'AI 今日計劃').slice(0, 60), items, cardioMin: Math.min(40, Math.max(0, Math.round(Number(o.plan.cardioMin) || 0))) };
   }
   return { reply, plan };
 }
-async function aiAsk(q) {
-  const c = aiCfg(), model = (c.model || C.aiModel || 'gemini-flash-latest').trim();
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': c.key },
-    body: JSON.stringify({ systemInstruction: { parts: [{ text: AI_SYS }] },
-      contents: [{ role: 'user', parts: [{ text: aiContext() + '\n\n## 用戶而家問\n' + q }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } }) });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
-  const txt = (((j.candidates || [])[0] || {}).content || {}).parts;
-  if (!txt) throw new Error('AI 冇回覆（可能被安全過濾）');
-  return Object.assign(aiParse(txt.map(p => p.text || '').join('')), { model });
+async function aiCall(user) {
+  const c = aiCfg(), P = aiProv(), model = (c.model || P.model).trim();
+  for (let t = 0; t < 2; t++) {
+    const r = await fetch(P.url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + c.key },
+      body: JSON.stringify({ model, temperature: 0.4, max_tokens: 3000, response_format: { type: 'json_object' },
+        messages: [{ role: 'system', content: AI_SYS }, { role: 'user', content: user }] }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((j.error && (j.error.message || j.error)) || j.message || ('HTTP ' + r.status));
+    const txt = ((((j.choices || [])[0] || {}).message || {}).content || '').trim();
+    if (txt) return Object.assign(aiParse(txt), { model });
+  }
+  throw new Error('AI 冇回覆，再試一次');
+}
+const aiAsk = q => aiCall(aiContext() + '\n\n## 用戶而家問（用 JSON 回覆）\n' + q);
+// 🌅 每日小檢討：過咗 4 點第一次開 App 自動做一次（有 AI key 先做）
+const DAILY_Q = '🌅 每日小檢討';
+let dailyBusy = false;
+async function aiDaily(force) {
+  const d = today();
+  if (!aiReady() || dailyBusy || !navigator.onLine || !S.profile.onboarded) return;
+  if (!force && (S.aiLog || []).some(a => a.type === 'daily' && a.date === d)) return;
+  dailyBusy = true; if (UI.tab === 'today') render();
+  try {
+    const r = await aiCall(aiContext() + `\n\n## 請做每日小檢討（用 JSON 回覆）\n睇琴日（${addDays(d, -1)}）同最近 7 日：reply 用 3–4 句講做得好嘅地方、一樣可以改善嘅嘢，同今日建議做咩（考慮今日班次、精神、痛同時間；今日未答問答就按班表同最近紀錄估）。如果今日適合做運動，就出今日計劃（gym 或者 activity）；應該休息就 plan 用 null。`);
+    (S.aiLog = S.aiLog || []).push({ id: uid(), at: Date.now(), upd: Date.now(), date: d, type: 'daily', q: DAILY_Q, reply: r.reply, plan: r.plan, model: r.model, used: false });
+    S.aiLog = S.aiLog.slice(-100); save();
+  } catch (e) { UI.dailyErr = String(e.message || e).slice(0, 120); }
+  dailyBusy = false; render();
+}
+function dailyCard() {
+  if (!aiReady()) return '';
+  const e = (S.aiLog || []).filter(a => a.type === 'daily' && a.date === today()).pop();
+  if (!e) return `<div class="card"><h2>🌅 AI 每日小檢討</h2><p class="small muted">${dailyBusy ? '🤖 諗緊…' : UI.dailyErr ? 'AI 出錯：' + esc(UI.dailyErr) : '未做'}</p>${dailyBusy ? '' : '<button class="btn sm ghost" data-act="aiDailyNow">而家做</button>'}</div>`;
+  return `<div class="card"><div class="row between"><h2>🌅 AI 每日小檢討</h2><button class="btn sm ghost" data-act="aiOpen">💬 傾多啲</button></div>
+    <p class="small">${esc(e.reply).replace(/\n/g, '<br>')}</p>${aiPlanHtml(e)}</div>`;
 }
 function aiPlanHtml(e) {
   if (!e.plan) return '';
+  if (e.plan.type === 'activity') return `<div class="card" style="margin:4px 0 0"><b>📋 ${esc(e.plan.title)}</b><p class="small">${esc(ACT_KINDS[e.plan.kind] || e.plan.kind)} ${e.plan.minutes} 分鐘${e.plan.note ? '：' + esc(e.plan.note) : ''}</p>
+    ${e.used ? '<p class="small muted">✅ 已記錄</p>' : `<button class="btn sm block" data-act="aiUse" data-id="${e.id}">✓ 做完，記錄</button>`}</div>`;
   return `<div class="card" style="margin:4px 0 0"><b>📋 ${esc(e.plan.title)}</b><ul class="clean small">${e.plan.items.map(it => `<li>${exLink(it.key, esc(C.exercises[it.key].name))}${placeChip(it.place)} <span class="muted">${it.sets} × ${it.reps[0]}–${it.reps[1]}${C.exercises[it.key].unit === 'sec' ? ' 秒' : ''}</span>${it.note ? `<br><span class="muted">${esc(it.note)}</span>` : ''}</li>`).join('')}</ul>
     ${e.plan.cardioMin ? `<p class="small">🏃 最後帶氧 ${e.plan.cardioMin} 分鐘</p>` : ''}
-    ${e.used ? '<p class="small muted">✅ 已用呢個計劃</p>' : S.active ? '<p class="small muted">而家有訓練進行緊，完成或者取消咗先用得。</p>' : `<button class="btn sm block" data-act="aiUse" data-id="${e.id}">▶️ 用呢個計劃開始訓練</button>`}</div>`;
+    ${e.used ? '<p class="small muted">✅ 已用呢個計劃</p>' : S.active ? '<p class="small muted">而家有訓練進行緊，完成或者取消咗先用得。</p>' : `<button class="btn sm block" data-act="aiUse" data-id="${e.id}">▶️ 開始（引導模式）</button>`}</div>`;
 }
 function aiModal() {
-  if (!aiReady()) { modal(`<h2>🤖 問 AI</h2><p>未設定 Gemini key：去「⚙︎ 設定 → ⚙️ 進階設定 → 問 AI」貼上 key。</p><button class="btn block" data-act="openSettings">去設定</button><div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`); return; }
+  if (!aiReady()) { modal(`<h2>🤖 問 AI</h2><p>未設定 AI key：去「⚙︎ 設定 → ⚙️ 進階設定 → 問 AI」貼上 key。</p><button class="btn block" data-act="openSettings">去設定</button><div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`); return; }
   const today_ = (S.aiLog || []).filter(a => a.date === today()).slice(-10);
   const ideas = ['今日得 40 分鐘，gym 半個鐘、其餘返屋企做', '膊頭有啲痛，今日點練？', '好攰，做個輕鬆版', '部機有人用緊，幫我換'];
   modal(`<div class="row between" style="flex-wrap:nowrap"><h2 style="margin:0">🤖 問 AI</h2><button class="btn sm ghost" data-act="closeModal">✕</button></div>
@@ -1716,9 +1768,9 @@ function startAiPlan(e) {
   });
   const cardio = e.plan.cardioMin ? Object.assign({ done: false }, gymCardio('normal'), { minutes: e.plan.cardioMin }) : null;
   S.active = { id: uid(), type: t, mode: 'normal', date: today(), startedAt: Date.now(), items, pain, gym: (curGym() || {}).name || '', ai: e.id,
-    split: items.some(i => i.place === 'home') && homeGym() ? { pct: -1, home: homeGym().name } : undefined, warm: { done: false }, cardio };
-  e.used = true; e.upd = Date.now();
-  save(); closeModal(); UI.tab = 'train'; render(); window.scrollTo(0, 0);
+    split: items.some(i => i.place === 'home') && homeGym() ? { pct: -1, home: homeGym().name } : undefined, warm: e.plan.warmup === false ? null : { done: false }, cardio, guided: true };
+  e.used = true; e.upd = Date.now(); UI.gi = null;
+  save(); closeModal(); UI.tab = 'train'; keepAwake(true); render(); window.scrollTo(0, 0);
 }
 function muscleModal() {
   const { i, k } = UI.mm, it = S.active.items[i], lv = exLv(k), canSwap = !it.sets.some(x => x.done);
@@ -1750,7 +1802,7 @@ function vGuided() {
   const a = S.active, n = a.items.length;
   if (!n) return vSession();
   const started = a.items.some(x => x.sets.some(y => y.done));
-  if (a.warm && !a.warm.done && !started) return `${warmCard(a)}<div class="grid2"><button class="btn ghost" data-act="warmDone">跳過熱身</button><button class="btn ghost" data-act="guidedOff">📋 睇成個清單</button></div>`;
+  if (a.warm && !a.warm.done && !started) return `${warmCard(a)}<div class="grid2"><button class="btn ghost" data-act="guidedOff">📋 睇成個清單</button><span></span></div>`;
   if (UI.gi == null || UI.gi >= n) { const k = a.items.findIndex(x => curSet(x) >= 0); UI.gi = k < 0 ? n - 1 : k; }
   const i = UI.gi, it = a.items[i], ex = C.exercises[it.key], j = curSet(it), s = j >= 0 ? it.sets[j] : null;
   const total = sum(a.items.map(x => x.sets.length)), done = sum(a.items.map(x => x.sets.filter(y => y.done).length));
@@ -1763,7 +1815,7 @@ function vGuided() {
   const wu = j === 0 ? warmupText(it.key, prog.w) : '';
   return `<div class="card">
     <div class="row between small muted"><span>動作 ${i + 1} / ${n}</span><span>已完成 ${done} / ${total} 組 · ${Math.round((Date.now() - a.startedAt) / 60000)} 分鐘</span></div>
-    <div class="bar" style="margin:6px 0 12px"><i style="width:${Math.round(100 * done / total)}%"></i></div>
+    <div class="bar" style="margin:6px 0 12px"><i style="width:${total ? Math.round(100 * done / total) : 100}%"></i></div>
     ${animHtml(it.key, 'lg')}
     <div class="gname">${exLink(it.key, esc(ex.name))}</div>
     ${it.subFrom ? '<span class="chip warn">因痛替代</span>' : ''}${placeChip(it.place)}
@@ -1780,9 +1832,9 @@ function vGuided() {
       </div>
       ${rpeHelp}
       <button class="btn block xl" data-act="doneSet" data-i="${i}" data-j="${j}" style="margin-top:12px">✓ 做完第 ${j + 1} 組</button>
-      ${a.items.some((x, k) => k !== i && curSet(x) >= 0) ? `<button class="btn block ghost" data-act="gDefer" style="margin-top:8px">⏭ 部機有人用：先做下個動作（呢個擺去最後）</button>` : ''}
+      <div class="grid2" style="margin-top:8px">${a.items.some((x, k) => k !== i && curSet(x) >= 0) ? `<button class="btn ghost" data-act="gDefer">⏳ 部機有人用，遲啲做</button>` : '<span></span>'}<button class="btn ghost" data-act="exSkip" data-i="${i}">⏭ 跳過呢個動作</button></div>
       <p class="small muted" style="margin:6px 0 0">撳完會自動開始休息 ${restSecs(it.key)} 秒計時。次數唔填就當做到 ${it.reps[1]} ${unit}。</p>`
-    : `<div class="gset">呢個動作完成 ✅</div>${nextIt ? `<button class="btn block xl" data-act="gGo" data-i="${a.items.indexOf(nextIt)}">下一個：${esc(C.exercises[nextIt.key].name)} →</button>` : ''}`}
+    : `<div class="gset">${it.skipped ? '呢個動作跳過咗 ⏭' : '呢個動作完成 ✅'}</div>${nextIt ? `<button class="btn block xl" data-act="gGo" data-i="${a.items.indexOf(nextIt)}">下一個：${esc(C.exercises[nextIt.key].name)} →</button>` : ''}`}
     <div class="grid2" style="margin-top:12px"><button class="btn ghost" data-act="gGo" data-i="${i - 1}" ${i === 0 ? 'disabled' : ''}>← 上一個</button><button class="btn ghost" data-act="gGo" data-i="${i + 1}" ${i === n - 1 ? 'disabled' : ''}>下一個 →</button></div>
   </div>
   ${allDone ? `${cardioCard(a)}${togetherBox(a)}<div class="card hero"><div class="big">器械全部完成 🎉</div><p>${a.cardio && !a.cardio.done ? '做埋上面嘅帶氧收尾，再' : ''}伸展 5 分鐘就完成。</p><button class="btn block" data-act="finishGym">儲存訓練</button></div>` : ''}
@@ -1812,7 +1864,7 @@ function finishGym() {
   }
   S.workouts.push({ id: a.id, at: Date.now(), date: a.date, type: a.type, mode: a.mode, minutes, pain: a.pain, gym: a.gym || undefined,
     split: a.split, ai: a.ai,
-    exercises: a.items.map(it => ({ key: it.key, slot: it.slot, subFrom: it.subFrom, gymFrom: it.gymFrom || undefined, place: it.place, altUsed: it.altUsed, note: it.note,
+    exercises: a.items.map(it => ({ key: it.key, slot: it.slot, subFrom: it.subFrom, gymFrom: it.gymFrom || undefined, place: it.place, skipped: it.skipped || undefined, altUsed: it.altUsed, note: it.note,
       sets: it.sets.map(s => ({ w: num(s.w), r: num(s.r), rpe: num(s.rpe), done: s.done })) })) });
   if (a.together) { const w = S.workouts.find(x => x.id === a.id); if (w) w.together = true; }
   if (a.cardio && a.cardio.done) S.activities.push({ id: uid(), at: Date.now(), date: a.date, kind: a.cardio.kind, minutes: a.cardio.minutes, intensity: a.cardio.intensity, note: 'gym 後帶氧：' + a.cardio.title, together: a.together || undefined });
@@ -2257,10 +2309,11 @@ function settingsModal() {
       <label class="f">GitHub Token（只存喺呢部機）<input id="syToken" type="password" autocomplete="off" autocapitalize="off" placeholder="${SY.token ? '已設定（想換先填）' : 'github_pat_…'}"></label>
       <div class="grid2"><button class="btn" data-act="connectSync">${SY.token ? '儲存並同步' : '連接並同步'}</button><button class="btn ghost" data-act="syncNowBtn" ${syncReady() ? '' : 'disabled'}>立即同步</button></div>
       ${SY.token ? '<div style="height:8px"></div><button class="btn sm danger" data-act="disconnectSync">喺呢部機中斷同步</button>' : ''}
-      <h3 style="margin-top:16px">🤖 問 AI（Gemini）</h3>
-      <p class="small muted">${aiReady() ? '✅ 已設定。' : ''}喺 aistudio.google.com 攞免費 key；只存喺呢部機。</p>
-      <label class="f">API key<input id="aiKey" type="password" autocomplete="off" autocapitalize="off" placeholder="${aiReady() ? '已設定（想換先填）' : 'AIza…'}"></label>
-      <label class="f">模型<input id="aiModel" value="${esc(aiCfg().model || C.aiModel)}" autocapitalize="off" autocorrect="off"></label>
+      <h3 style="margin-top:16px">🤖 問 AI</h3>
+      <p class="small muted">${aiReady() ? `✅ 已設定（${esc(aiProv().name)}）。` : ''}Key 只存喺呢部機。</p>
+      <label class="f">用邊間<select id="aiProv">${Object.entries(AI_PROVIDERS).map(([k, v]) => `<option value="${k}" ${(aiCfg().provider || 'deepseek') === k ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select></label>
+      <label class="f">API key<input id="aiKey" type="password" autocomplete="off" autocapitalize="off" placeholder="${aiReady() ? '已設定（想換先填）' : 'sk-…'}"></label>
+      <label class="f">模型（留空 = 預設）<input id="aiModel" value="${esc(aiCfg().model || '')}" placeholder="${esc((aiProv() || AI_PROVIDERS.deepseek).model)}" autocapitalize="off" autocorrect="off"></label>
       <div class="grid2"><button class="btn" data-act="aiSaveKey">儲存</button>${aiReady() ? '<button class="btn danger" data-act="aiClearKey">刪除 key</button>' : '<span></span>'}</div>
       <h3 style="margin-top:16px">👫 ${esc(C.partner.name)}嘅連結</h3>
       <div class="row" style="flex-wrap:nowrap;gap:6px"><input readonly value="${esc(partnerUrl())}" style="margin:0;flex:1;min-width:0"><button class="btn sm" data-act="copyPartnerUrl">複製</button></div>
@@ -2572,6 +2625,7 @@ const actions = {
   exInfo(el) { exModal(el.dataset.k); },
   openGyms() { UI.gymEdit = null; gymsModal(); },
   aiOpen() { aiModal(); },
+  aiDailyNow() { UI.dailyErr = ''; aiDaily(true); },
   aiIdea(el) { const t = $('#aiQ'); if (t) t.value = el.dataset.t; },
   async aiSend() {
     const q = (($('#aiQ') || {}).value || '').trim(); if (!q) { toast('寫低你想點先'); return; }
@@ -2583,14 +2637,19 @@ const actions = {
       (S.aiLog = S.aiLog || []).push(e); S.aiLog = S.aiLog.slice(-100); UI.aiQ = ''; save(); aiModal();
     } catch (err) { aiModal(); toast('AI 出錯：' + String(err.message || err).slice(0, 120)); }
   },
-  aiUse(el) { const e = (S.aiLog || []).find(a => a.id === el.dataset.id); if (!e || !e.plan) return; if (S.active) { toast('而家有訓練進行緊'); return; } startAiPlan(e); toast('已用 AI 計劃開始 💪'); },
+  aiUse(el) {
+    const e = (S.aiLog || []).find(a => a.id === el.dataset.id); if (!e || !e.plan) return;
+    if (e.plan.type === 'activity') { e.used = true; e.upd = Date.now(); save(); closeModal(); actModal({ kind: e.plan.kind, min: e.plan.minutes }); return; }
+    if (S.active) { toast('而家有訓練進行緊'); return; } startAiPlan(e); toast('已用 AI 計劃開始 💪');
+  },
   aiSaveKey() {
-    const c = aiCfg(), k = ($('#aiKey').value || '').trim(), m = ($('#aiModel').value || '').trim();
-    if (k) c.key = k; c.model = m && m !== C.aiModel ? m : undefined;
+    const c = aiCfg(), k = ($('#aiKey').value || '').trim(), m = ($('#aiModel').value || '').trim(), pv = $('#aiProv').value;
+    if (pv !== c.provider) { c.provider = pv; if (!k) delete c.key; }
+    if (k) c.key = k; c.model = m || undefined;
     try { localStorage.setItem(AI_KEY, JSON.stringify(c)); } catch (e) {}
     settingsModal(); toast(c.key ? '✅ AI 設定已儲存' : '未填 key');
   },
-  aiClearKey() { if (!confirm('喺呢部機刪除 Gemini key？')) return; try { localStorage.removeItem(AI_KEY); } catch (e) {} settingsModal(); toast('已刪除'); },
+  aiClearKey() { if (!confirm('喺呢部機刪除 AI key？')) return; try { localStorage.removeItem(AI_KEY); } catch (e) {} settingsModal(); toast('已刪除'); },
   setHome(el) { S.split = Object.assign({}, S.split || {}, { homeId: el.dataset.id || null, upd: Date.now() }); save(); render(); gymsModal(); toast(el.dataset.id ? '已設定屋企 🏠' : '已取消屋企'); },
   splitPick(el) { S.split = Object.assign({}, S.split || {}, { pct: Number(el.dataset.v), upd: Date.now() }); save(); render(); },
   gymPick(el) { S.gymSel = { id: el.dataset.id, upd: Date.now() }; save(); render(); gymsModal(); toast('已轉 gym：' + curGym().name); },
@@ -2749,6 +2808,15 @@ const actions = {
     try { await photoTx('readwrite', st => st.delete(m.id)); } catch (e) {}
     save(); render();
     if (m.up && syncReady()) deleteRemoteMeal(m);
+  },
+  warmSkip() { if (S.active && S.active.warm) { S.active.warm.done = true; S.active.warm.skip = true; persist(); render(); window.scrollTo(0, 0); toast('已跳過熱身'); } },
+  cardioSkip() { const c = S.active && S.active.cardio; if (!c) return; c.skip = !c.skip; c.done = false; persist(); render(); },
+  bikeSkip() { if (S.active) { S.active.bikeSkip = true; persist(); render(); } },
+  exSkip(el) {
+    const a = S.active, it = a && a.items[el.dataset.i]; if (!it) return;
+    it.sets = it.sets.filter(x => x.done); it.skipped = true;
+    const k = a.items.findIndex(x => curSet(x) >= 0); if (a.guided && k >= 0) UI.gi = k;
+    persist(); render(); window.scrollTo(0, 0); toast('已跳過');
   },
   warmDone() { if (S.active && S.active.warm) { S.active.warm.done = true; persist(); render(); window.scrollTo(0, 0); } },
   cardioDone() { if (S.active && S.active.cardio) { S.active.cardio.done = !S.active.cardio.done; persist(); render(); if (S.active.cardio.done) toast('帶氧完成 🔥 記得伸展'); } },
@@ -2912,9 +2980,9 @@ checkMilestones();
 fetchPartner();
 loadWeather();
 loadSun();
-syncNow(false);
+Promise.resolve(syncNow(false)).then(() => aiDaily());
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) { render(); loadWeather(); loadSun(); syncNow(false); if (S.active && S.active.guided) keepAwake(true); }
+  if (!document.hidden) { render(); loadWeather(); loadSun(); Promise.resolve(syncNow(false)).then(() => aiDaily()); if (S.active && S.active.guided) keepAwake(true); }
   else if (syncTimer) syncNow(false); // 收埋 App 之前，即刻上傳未同步嘅改動
 });
 window.addEventListener('online', () => syncNow(false));
