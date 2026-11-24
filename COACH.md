@@ -29,7 +29,7 @@ done
 ```json
 { "at": 1795520000000, "meals": { "<meal id>": { "desc": "炸雞飯、蜜糖芥末汁、雜菜、齋啡", "protein": 30, "kcal": 750, "veg": true, "at": 1795520000000 } } }
 ```
-App 同步時會將結果顯示喺「飲食」頁（🤖 …），冇剔蛋白質嘅會自動剔（≥15g），然後**刪走手機入面嗰張相**（私人 repo 嘅 `meals/` 仲有，唔好刪）。上載方法同下面 `claude-ack.json` 一樣（GET 攞 sha → PUT base64）。
+App 同步時會將結果顯示喺「飲食」頁（🤖 …），冇剔蛋白質嘅會自動剔（≥15g）。相上載咗已經喺手機刪走（私人 repo 嘅 `meals/` 有，唔好刪）。上載方法同下面 `claude-ack.json` 一樣（GET 攞 sha → PUT base64）。
 
 ## Claude 要做嘅嘢
 1. 讀 `logs/` 入面**最新**嗰個 JSON（如果有舊 log，同上一個比較趨勢）。次序：
@@ -79,6 +79,8 @@ App 同步時會將結果顯示喺「飲食」頁（🤖 …），冇剔蛋白�
   - **🌅 每日小檢討**：過咗 4 點第一次開 App（同步完）自動做一次，`aiLog` 入面 `type: 'daily'`；計劃可以係 gym（撳開始直接入引導模式）或者 activity
   - 換動作頁：`muscleModal()`（同部位替代有相、按 gym／屋企器材篩）；「🤖 AI 幫我揀」= `mmAsk()`，`aiLog` 入面 `type: 'swap'`，AI 揀嘅動作一定要練同一個主要部位先顯示
   - workout 有 `skipped: true` 嘅動作 = 用戶撳咗跳過；`active.warm.skip`、`cardio.skip` = 跳過熱身／帶氧
+  - 14 日前嘅 AI 對話會由手機搬去私人 repo 嘅 `data/ai-log-YYYY-MM.json`（女朋友：`data/ai-log-her-YYYY-MM.json`），大檢討時要一齊睇：`gh api repos/benleung2004/fitness-data/contents/data --jq '.[].name'`
+  - 食物相上載咗就喺手機刪走；App 要睇先由私人 repo 攞（唔存返落手機）
   - **睇 log 時要檢查 `aiLog`**：AI 有冇違反原則（力竭、痛仲練、太多組、用咗做唔到嘅器材）、重量建議合唔合理。
   - 想 AI 以後跟你嘅建議 → 改 `js/config.js` 嘅 `coachNotes`（公開 repo，唔好寫個人數字）；供應商同預設模型 → `AI_PROVIDERS`
 - **讀完 `noteForClaude` 一定要寫回條**（用戶要求，等手機清空個格）：用最新 log 嘅 `noteUpd`，寫去私人 repo 嘅 `data/claude-ack.json`（女朋友：`data/claude-ack-her.json`），唔好改 `fitness.json`：

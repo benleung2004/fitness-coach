@@ -71,7 +71,7 @@ function mergeData(R) {
   S.gyms = byId(S.gyms, R.gyms);
   if (R.gymSel && (R.gymSel.upd || 0) > ((S.gymSel || {}).upd || 0)) S.gymSel = R.gymSel;
   if (R.split && (R.split.upd || 0) > ((S.split || {}).upd || 0)) S.split = R.split;
-  S.aiLog = byId(S.aiLog, R.aiLog).sort((a, b) => a.at - b.at).slice(-100);
+  S.aiLog = byId(S.aiLog, R.aiLog).sort((a, b) => a.at - b.at);
   Object.entries(R.days || {}).forEach(([d, r]) => {
     const l = S.days[d];
     if (!l) { S.days[d] = r; return; }
@@ -185,7 +185,7 @@ async function syncNow(manual) {
     }
     if (!ok) throw new Error('多部機同時同步，稍後再試');
     SY.lastSync = Date.now(); SY.lastError = ''; saveSY();
-    uploadMeals(); fetchPartner(); fetchAck(); fetchMealNotes();
+    uploadMeals(); fetchPartner(); fetchAck(); fetchMealNotes(); archiveAi();
     if (manual) toast('☁️ 同步完成');
   } catch (e) {
     SY.lastError = e.message === 'auth' ? 'Token 無效、過期，或者冇呢個 repo 嘅權限' : (e.message === 'Failed to fetch' ? '連唔到 GitHub' : e.message);
@@ -231,6 +231,34 @@ async function fetchMealNotes() {
     }
     if (n) { save(); render(); }
   } catch (e) {}
+}
+// ---------- 舊 AI 對話（14 日前）搬去私人 repo 嘅月份檔，手機唔使一直存住 ----------
+let archiving = false;
+async function archiveAi() {
+  const cut = addDays(today(), -14), old = (S.aiLog || []).filter(a => a.date < cut);
+  if (!syncReady() || archiving || !old.length) return;
+  archiving = true;
+  try {
+    const byM = {};
+    old.forEach(a => (byM[a.date.slice(0, 7)] = byM[a.date.slice(0, 7)] || []).push(a));
+    for (const [m, list] of Object.entries(byM)) {
+      const path = `data/ai-log${SFX ? '-' + USER : ''}-${m}.json`;
+      let sha = null, prev = [];
+      const r = await ghFetch({}, path);
+      if (r.ok) { const j = await r.json(); sha = j.sha; try { prev = JSON.parse(b64dec(j.content || '')).aiLog || []; } catch (e) {} }
+      else if (r.status !== 404) break;
+      const all = new Map([...prev, ...list].map(a => [a.id, a]));
+      const body = { message: `archive ai log ${m}`, content: b64enc(JSON.stringify({ month: m, aiLog: [...all.values()].sort((a, b) => a.at - b.at) }, null, 1)) };
+      if (sha) body.sha = sha;
+      const w = await ghFetch({ method: 'PUT', body: JSON.stringify(body) }, path);
+      if (!w.ok) break;
+      const ids = new Set(list.map(a => a.id));
+      list.forEach(a => { S.deleted[a.id] = Date.now(); });
+      S.aiLog = S.aiLog.filter(a => !ids.has(a.id));
+      save();
+    }
+  } catch (e) {}
+  archiving = false;
 }
 // ---------- 對方紀錄（只讀）：用同一個 token 讀對方嘅資料檔 ----------
 const PARTNER_KEY = 'fc_partner' + SFX;
@@ -1727,7 +1755,7 @@ async function aiDaily(force) {
   try {
     const r = await aiCall(aiContext() + `\n\n## 請做每日小檢討（用 JSON 回覆）\n睇琴日（${addDays(d, -1)}）同最近 7 日：reply 用 3–4 句講做得好嘅地方、一樣可以改善嘅嘢，同今日建議做咩（考慮今日班次、精神、痛同時間；今日未答問答就按班表同最近紀錄估）。如果今日適合做運動，就出今日計劃（gym 或者 activity）；應該休息就 plan 用 null。`);
     (S.aiLog = S.aiLog || []).push({ id: uid(), at: Date.now(), upd: Date.now(), date: d, type: 'daily', q: DAILY_Q, reply: r.reply, plan: r.plan, model: r.model, used: false });
-    S.aiLog = S.aiLog.slice(-100); save();
+    save();
   } catch (e) { UI.dailyErr = String(e.message || e).slice(0, 120); }
   dailyBusy = false; render();
 }
@@ -1746,14 +1774,22 @@ function aiPlanHtml(e) {
     ${e.plan.cardioMin ? `<p class="small">🏃 最後帶氧 ${e.plan.cardioMin} 分鐘</p>` : ''}
     ${e.used ? '<p class="small muted">✅ 已用呢個計劃</p>' : S.active ? '<p class="small muted">而家有訓練進行緊，完成或者取消咗先用得。</p>' : `<button class="btn sm block" data-act="aiUse" data-id="${e.id}">▶️ 開始（引導模式）</button>`}</div>`;
 }
+const hhmm = t => { const d = new Date(t); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+const daySep = d => `<div class="daysep">—— ${fmtDate(d)} ——</div>`;
+const chatHtml = e => `<div class="bub me">${esc(e.q)}<div class="btime">${hhmm(e.at)}</div></div><div class="bub ai">${esc(e.reply).replace(/\n/g, '<br>')}${aiPlanHtml(e)}<div class="btime">${hhmm(e.at)}</div></div>`;
 function aiModal() {
   if (!aiReady()) { modal(`<h2>🤖 問 AI</h2><p>未設定 AI key：去「⚙︎ 設定 → ⚙️ 進階設定 → 問 AI」貼上 key。</p><button class="btn block" data-act="openSettings">去設定</button><div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`); return; }
-  const today_ = (S.aiLog || []).filter(a => a.date === today()).slice(-10);
+  const t = today(), log = (S.aiLog || []).slice().sort((a, b) => a.at - b.at);
+  const today_ = log.filter(a => a.date === t), past = log.filter(a => a.date < t);
+  const pastDays = [...new Set(past.map(a => a.date))].slice(-7);
   const ideas = ['今日得 40 分鐘，gym 半個鐘、其餘返屋企做', '膊頭有啲痛，今日點練？', '好攰，做個輕鬆版', '部機有人用緊，幫我換'];
   modal(`<div class="row between" style="flex-wrap:nowrap"><h2 style="margin:0">🤖 問 AI</h2><button class="btn sm ghost" data-act="closeModal">✕</button></div>
-    <p class="small muted" style="margin:4px 0">AI 睇晒你嘅紀錄、gym 同屋企器材、原則同 Claude 嘅建議；問咩都得。對話會記錄，Claude 之後會檢查。只供參考，有痛就停。</p>
-    <div class="chat" id="aiChat">${today_.length ? today_.map(e => `<div class="bub me">${esc(e.q)}</div><div class="bub ai">${esc(e.reply).replace(/\n/g, '<br>')}${aiPlanHtml(e)}</div>`).join('')
-      : `<div class="bub ai">你好！想今日點練、換動作、問食咩都得 💪<div class="opts" style="margin-top:6px">${ideas.map(t => `<button class="opt" data-act="aiIdea" data-t="${esc(t)}">${esc(t)}</button>`).join('')}</div></div>`}</div>
+    <p class="small muted" style="margin:4px 0">AI 睇晒你嘅紀錄同 Claude 嘅建議；對話會記錄俾 Claude 檢查。只供參考，有痛就停。</p>
+    ${pastDays.length ? (UI.aiHist ? pastDays.map(d => daySep(d) + `<div class="chat">${past.filter(a => a.date === d).map(chatHtml).join('')}</div>`).join('') + '<button class="btn sm ghost block" data-act="aiHist">收埋之前嘅對話</button>'
+      : '<button class="btn sm ghost block" data-act="aiHist">📜 睇之前嘅對話</button>') : ''}
+    ${daySep(t)}
+    <div class="chat" id="aiChat">${today_.length ? today_.map(chatHtml).join('')
+      : `<div class="bub ai">你好！想今日點練、換動作、問食咩都得 💪<div class="opts" style="margin-top:6px">${ideas.map(x => `<button class="opt" data-act="aiIdea" data-t="${esc(x)}">${esc(x)}</button>`).join('')}</div></div>`}</div>
     <div class="row" style="flex-wrap:nowrap;gap:6px;align-items:flex-end"><textarea id="aiQ" rows="2" style="margin:0;flex:1" placeholder="問 AI…">${esc(UI.aiQ || '')}</textarea><button class="btn" data-act="aiSend" id="aiSendBtn" style="width:auto">送出</button></div>`);
   const box = $('#modalBox'); if (box) box.scrollTop = box.scrollHeight;
 }
@@ -1808,7 +1844,7 @@ async function mmAsk() {
     const keys = ((r.plan && r.plan.items) || []).map(x => x.key).filter(k => k !== it.key && C.exercises[k] && gymHas(k, g) && (!main || (C.sore.map[k] || []).includes(main)));
     UI.mmAi = { i, reply: r.reply || '', keys: [...new Set(keys)] };
     (S.aiLog = S.aiLog || []).push({ id: uid(), at: Date.now(), upd: Date.now(), date: today(), type: 'swap', q: `換動作：${C.exercises[it.key].name}（${UI.mmWhy || '冇講原因'}）`, reply: r.reply, plan: r.plan, model: r.model, used: false });
-    S.aiLog = S.aiLog.slice(-100); persist();
+    persist();
     if (!UI.mmAi.keys.length) UI.mmAi.reply += '（AI 揀嘅動作呢度做唔到或者唔係練同一個部位，試吓上面嘅選擇）';
   } catch (e) { toast('AI 出錯：' + String(e.message || e).slice(0, 120)); }
   UI.mmBusy = false; if (UI.mm) muscleModal();
@@ -2130,7 +2166,7 @@ async function uploadMeals() {
       const rec = await photoTx('readonly', st => st.get(m.id));
       if (!rec || !rec.blob) continue;   // 相喺另一部機，由嗰部機上載
       const r = await ghContents(mealPath(m), { method: 'PUT', body: JSON.stringify({ message: `meal ${m.date} ${MEAL_SLOTS[m.slot] || ''}`, content: await blobB64(rec.blob) }) });
-      if (r.ok || r.status === 422) { m.up = true; m.upd = Date.now(); m.path = mealPath(m); }
+      if (r.ok || r.status === 422) { m.up = true; m.upd = Date.now(); m.path = mealPath(m); try { await photoTx('readwrite', st => st.delete(m.id)); } catch (e) {} }
       else if (r.status === 401 || r.status === 403) break;
     }
   } catch (e) { /* 冇網：下次再試 */ }
@@ -2146,14 +2182,21 @@ async function deleteRemoteMeal(m) {
   } catch (e) {}
 }
 let mealUrls = [];
+const mealRemote = {};   // 已上載嘅相：要睇先由私人 repo 攞，唔存喺手機
 async function fillMeals() {
   const imgs = document.querySelectorAll('img[data-meal]');
   mealUrls.forEach(u => URL.revokeObjectURL(u)); mealUrls = [];
   for (const el of imgs) {
+    const id = el.dataset.meal, m = (S.meals || []).find(x => x.id === id), none = () => el.replaceWith(Object.assign(document.createElement('div'), { className: 'mealph', textContent: '🍽️' }));
     try {
-      const rec = await photoTx('readonly', st => st.get(el.dataset.meal));
-      if (rec && rec.blob) { const u = URL.createObjectURL(rec.blob); mealUrls.push(u); el.src = u; } else el.replaceWith(Object.assign(document.createElement('div'), { className: 'mealph', textContent: '🍽️' }));
-    } catch (e) {}
+      const rec = await photoTx('readonly', st => st.get(id));
+      if (rec && rec.blob) { const u = URL.createObjectURL(rec.blob); mealUrls.push(u); el.src = u; continue; }
+      if (mealRemote[id]) { el.src = mealRemote[id]; continue; }
+      if (!m || !m.up || !syncReady() || !navigator.onLine) { none(); continue; }
+      const r = await ghFetch({ headers: { Accept: 'application/vnd.github.raw' } }, m.path || mealPath(m));
+      if (!r.ok) { none(); continue; }
+      el.src = mealRemote[id] = URL.createObjectURL(await r.blob());
+    } catch (e) { none(); }
   }
 }
 let photoUrls = [];
@@ -2280,7 +2323,7 @@ function vFood() {
     : m.up ? '☁️ 已上載，Claude 睇得到' : syncReady() ? '⏳ 等上載（有網會自動上）' : '📱 只喺呢部機（開咗同步先會上載）';
   return `${C.nutritionGoal ? `<div class="card"><h2>🎯 飲食目標</h2><p class="small">${esc(C.nutritionGoal)}</p></div>` : ''}<div class="card">
     <div class="row between"><h2>📸 食物相</h2><span class="small muted">每餐影一張</span></div>
-    <p class="small muted">影相或者寫低食咩就得。Claude 睇完相會寫低結果，再喺手機刪走張相（私人 repo 有備份）。</p>
+    <p class="small muted">影相或者寫低食咩就得。相上載咗去私人 repo 就會喺手機刪走，唔佔手機位。</p>
     ${opts('mealSlot', MEAL_SLOTS, UI.mealSlot || mealSlotNow())}
     <input id="mealNote" placeholder="寫低食咩，例如：雞扒飯、走甜奶茶" value="${esc(UI.mealDraft || '')}" style="margin:8px 0">
     <div class="grid2"><button class="btn" data-act="saveMealText">✅ 確認記錄（冇相都得）</button><label class="btn">📸 影相／揀相<input type="file" accept="image/*" id="mealFile" class="hidden"></label></div>
@@ -2645,7 +2688,8 @@ const actions = {
   backupNow() { S.lastBackup = today(); save(); exportClaude(); render(); },
   exInfo(el) { exModal(el.dataset.k); },
   openGyms() { UI.gymEdit = null; gymsModal(); },
-  aiOpen() { aiModal(); },
+  aiOpen() { UI.aiHist = false; aiModal(); },
+  aiHist() { UI.aiHist = !UI.aiHist; aiModal(); },
   aiDailyNow() { UI.dailyErr = ''; aiDaily(true); },
   aiIdea(el) { const t = $('#aiQ'); if (t) t.value = el.dataset.t; },
   async aiSend() {
@@ -2655,7 +2699,7 @@ const actions = {
     try {
       const r = await aiAsk(q);
       const e = { id: uid(), at: Date.now(), upd: Date.now(), date: today(), q, reply: r.reply, plan: r.plan, model: r.model, used: false };
-      (S.aiLog = S.aiLog || []).push(e); S.aiLog = S.aiLog.slice(-100); UI.aiQ = ''; save(); aiModal();
+      (S.aiLog = S.aiLog || []).push(e); UI.aiQ = ''; save(); aiModal();
     } catch (err) { aiModal(); toast('AI 出錯：' + String(err.message || err).slice(0, 120)); }
   },
   aiUse(el) {
