@@ -66,6 +66,14 @@ done
 - 今日邊度酸（2D 前面／背面人體圖）→ `days[*].sore = { r: { 部位: 1 有啲酸／2 好酸 }, at }`；部位同動作對照 → `js/config.js` 嘅 `sore`（`regions`、`map`、`actMap`、`hints`）；分析 → `soreAnalysis()`。分析 log 時：酸喺練過嘅肌肉 = 正常；冇練都酸（尤其下背、上背、前臂）= 可能借錯力，對返嗰幾日做咗咩動作
 - gym 帶氧／熱身可揀機 → `gymExtras.cardioChoices`、`warmupChoices`；換同部位動作 → `swapOptions()`（按 `config.sore.map` 重疊部位排，主要部位要一樣；冇 map 先用 `library.js` 嘅 `group`）；訓練畫面「🧍 睇練邊度／冇呢部機？」人體圖 → `muscleModal()`、`exLv()`
 
+- gym／屋企時間分配：`S.split = { homeId, pct, upd }`（pct = 屋企佔幾多 %：0／25／50／75／100）；邏輯 → `placedItems()`（做唔到嘅自動去另一邊，屋企優先做單關節／核心），掣 → `splitBox()`；workout 有 `split`，每個動作有 `place: 'gym'|'home'`
+- 屋企啞鈴動作（唔使凳）：`dbRow`、`floorPress`、`dbRevFly`、企住做嘅 `dbShoulderPress`；冇器材可以換先用徒手（`pushup`、`birdDog`），見 `gymResolve()`
+- 每日欄位改動時間：`days[*].u`（例如 `waterMl`、`protein`、`sleepH`、`c.<格>`），同步以最後改嗰次為準
+- **App 內問 AI（Gemini）**：`aiAsk()`／`aiContext()`／`AI_SYS`。Key 只存喺手機 `localStorage.fc_ai`，唔同步唔匯出。每次問答記喺 `aiLog`（`q` 問題、`reply`、`plan`、`used` 有冇用、`model`）；用咗嘅訓練 workout 有 `ai: <aiLog id>`。
+  - **睇 log 時要檢查 `aiLog`**：AI 有冇違反原則（力竭、痛仲練、太多組、用咗做唔到嘅器材）、重量建議合唔合理。
+  - 想 AI 以後跟你嘅建議 → 改 `js/config.js` 嘅 `coachNotes`（公開 repo，唔好寫個人數字）；模型預設 → `aiModel`
+- 手動補記（App 冇記到、用戶口述）：`logs/manual-notes.md`，分析時一齊睇
+
 ## 唔可以改嘅原則（來自原本 brief）
 - 新手、以「持續」為主要成功指標，唔係減重或者健美
 - 唔好建議大熱量赤字（體重本身正常）

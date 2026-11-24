@@ -4,7 +4,7 @@
 // 改完記得將 sw.js 入面嘅 CACHE_VERSION 加 1，手機先會攞到新版。
 // =============================================================
 window.CONFIG = {
-  version: '1.18.0',
+  version: '1.19.0',
 
   // ---------- 每週 / 每日目標 ----------
   targets: {
@@ -53,7 +53,7 @@ window.CONFIG = {
     latRaise:   { name: '啞鈴側平舉 Lateral Raise', type: 'isolation', unit: 'kg', inc: 1, rest: '60–90 秒',
                   cue: '手肘微彎，舉到膊頭高度就夠；放落要慢，唔好聳膊。',
                   sub: '器械側平舉／彈力帶側平舉', avoid: ['shoulder'], painSub: { shoulder: null } },
-    plank:      { name: '平板支撐 Plank', type: 'core', unit: 'sec', inc: 5, rest: '60 秒',
+    plank:      { name: '平板支撐 Plank', type: 'core', unit: 'sec', inc: 5, rest: '60 秒', reps: [20, 40],
                   cue: '頭到腳一直線，收肚收臀，唔好塌腰或者翹高屁股。',
                   sub: '跪地平板支撐', avoid: ['back'], painSub: { back: 'birdDog' } },
     legExt:     { name: '腿伸展機 Leg Extension', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
@@ -93,7 +93,7 @@ window.CONFIG = {
     cableCurl:  { name: '繩索彎舉 Cable Curl', type: 'isolation', unit: 'kg', inc: 2.5, rest: '60–90 秒',
                   cue: '手肘固定，捲上去停一停。', sub: '啞鈴彎舉', avoid: ['wrist'], painSub: { wrist: null } },
     dbShoulderPress:{ name: '啞鈴肩推 Dumbbell Shoulder Press', type: 'compound', unit: 'kg', inc: 1, rest: '90–120 秒',
-                  cue: '坐直背貼椅背，推上去唔好碰埋，落到耳仔高度。', sub: '器械肩推', avoid: ['shoulder'], painSub: { shoulder: null } },
+                  cue: '有凳就坐直背貼椅背；冇凳就企直、膝頭微彎、收肚唔好拗腰。推上去唔好碰埋，落到耳仔高度。', sub: '器械肩推', avoid: ['shoulder'], painSub: { shoulder: null } },
     gluteBridge:{ name: '臀橋 Glute Bridge', type: 'bw', unit: 'bw', inc: 2, rest: '60 秒',
                   cue: '瞓低屈膝，用臀部發力頂起，頂點夾實 1 秒。', sub: '單腳臀橋', avoid: [], painSub: {} },
     dbRdl:      { name: '啞鈴羅馬尼亞硬拉 Dumbbell RDL', type: 'compound', unit: 'kg', inc: 1, rest: '90–120 秒',
@@ -110,6 +110,17 @@ window.CONFIG = {
                   sub: '腿推機', avoid: ['knee'], painSub: { knee: 'gluteBridge' } },
     birdDog:    { name: '鳥狗式 Bird-dog', type: 'core', unit: 'bw', inc: 2, rest: '45 秒',
                   cue: '四點跪地，對角手腳伸直，身體唔好搖；每邊計一下。', sub: '死蟲式', avoid: [], painSub: {} },
+    dbRow:      { name: '單手啞鈴划船 Dumbbell Row', type: 'compound', unit: 'kg', inc: 1, rest: '60–90 秒', reps: [10, 12],
+                  cue: '一隻手撐凳或者膝頭，背平直；手肘向上向後拉到腰側，唔好轉身借力。每邊做一次先計一組。',
+                  sub: '鋼索划船', avoid: [], painSub: {} },
+    floorPress: { name: '啞鈴地板臥推 Dumbbell Floor Press', type: 'compound', unit: 'kg', inc: 1, rest: '90 秒', reps: [10, 12],
+                  cue: '瞓喺瑜伽墊屈膝，啞鈴喺胸口兩邊；手肘大約 45 度，落到手臂輕輕掂地停一停再推上去（唔使凳）。',
+                  sub: '掌上壓', avoid: ['shoulder', 'wrist'], painSub: { shoulder: null, wrist: null } },
+    dbRevFly:   { name: '俯身啞鈴反向飛鳥 Bent-over Reverse Fly', type: 'isolation', unit: 'kg', inc: 1, rest: '60 秒', reps: [12, 15],
+                  cue: '膝頭微彎，屈髖令上身向前傾約 45 度，背保持直；手肘微彎向兩邊打開，用膊頭後面發力，唔好聳膊。用輕重量。',
+                  sub: '彈力帶拉開', avoid: ['shoulder', 'back'], painSub: { shoulder: null, back: null } },
+    pushup:     { name: '掌上壓 Push-up', type: 'bw', unit: 'bw', inc: 2, rest: '60–90 秒', reps: [6, 12],
+                  cue: '雙手比膊頭略闊，身體一直線；做唔到就跪地做。', sub: '跪地掌上壓', avoid: ['shoulder', 'wrist'], painSub: { shoulder: null, wrist: null } },
     deadBug:    { name: '死蟲式 Dead Bug', type: 'core', unit: 'bw', inc: 2, rest: '45 秒',
                   cue: '下背貼實地，對角手腳慢慢放低，呼氣收肚。', sub: '平板支撐', avoid: [], painSub: {} }
   },
@@ -299,7 +310,8 @@ window.CONFIG = {
     reverseFly: [['pecDeck', 'cable']], shoulderPress: ['shoulderPress'], latPulldown: [['pulldown', 'cable']], row: [['seatedRow', 'cable']],
     assistPullup: ['assistPullup'], backExt: ['backExt'], abMachine: ['abMachine'], pushdown: ['cable'], cableCurl: ['cable'], facePull: ['cable'],
     latRaise: ['dumbbells'], dbCurl: ['dumbbells'], ohTriceps: ['dumbbells'], dbRdl: ['dumbbells'], gobletSquat: [['dumbbells', 'kettlebell']],
-    dbBench: ['dumbbells', 'bench'], dbShoulderPress: ['dumbbells', 'bench'], hipThrust: ['rack', 'bench']
+    dbBench: ['dumbbells', 'bench'], dbShoulderPress: ['dumbbells'], hipThrust: ['rack', 'bench'],
+    dbRow: ['dumbbells'], floorPress: ['dumbbells'], dbRevFly: ['dumbbells']
   },
   // gym 帶氧／熱身揀機要用嘅器材
   choiceEquip: { incline: 'treadmill', run: 'treadmill', walk: 'treadmill', bike: 'bike', walker: 'elliptical' },
@@ -310,6 +322,15 @@ window.CONFIG = {
   aiBackground: '健身新手（2026 年 11 月開始），返輪班（早更／辦公時間／夜更），喺香港住。目標係養成習慣（持續最重要）同增肌；體重正常偏輕，唔使減重，要食夠。唔鍾意熱同濕，唔識游水。',
   aiRules: ['頭 4 週唔做力竭、唔做保加利亞分腿蹲，目標 RPE 7（每組仲有大約 3 下力）', '有痛就停相關動作、改做替代動作；痛持續就睇醫生／物理治療師', 'gym 只做器械同啞鈴，平板支撐、捲腹留返屋企做', '夜更前後只做輕鬆行路同伸展', '用字鼓勵，唔好講「失敗」'],
 
+  // App 內「🤖 問 AI」（Gemini）：Claude 檢查 log 之後喺度更新建議，AI 每次都會跟（唔好寫個人數字，呢個 repo 公開）
+  aiModel: 'gemini-flash-latest',
+  coachNotes: [
+    '新手每個動作 2–3 組已經夠；每次 5–6 個動作、總共 12–18 組最好，唔好每個動作 4 組。',
+    'chocoZAP 冇腿彎舉、腿伸展機：腿只靠腿推機，大腿後用啞鈴羅馬尼亞硬拉。',
+    '「胸＋膊頭」二合一機：向前推 = 胸推，向中間夾 = 夾胸，反過嚟坐 = 反向飛鳥。',
+    '屋企器材少：優先做啞鈴單手划船、地板臥推、企住肩推、高腳杯深蹲、俯身反向飛鳥、平板支撐。',
+    '時間唔夠就減組數，唔好減熱身；先做複合動作（腿推、胸推、下拉／划船），單關節同核心放最後。'
+  ],
   sore: {
     regions: {
       shoulders: '膊頭（前／側）', chest: '胸', biceps: '二頭肌', forearm: '前臂', abs: '腹', obliques: '側腹', quads: '大腿前',
@@ -323,7 +344,7 @@ window.CONFIG = {
       backExt: ['lowerBack', 'glutes', 'hamstrings'], abMachine: ['abs'], plank: ['abs', 'obliques'], crunch: ['abs'], deadBug: ['abs', 'obliques'],
       chestPress: ['chest', 'shoulders', 'triceps'], dbBench: ['chest', 'shoulders', 'triceps'], pushup: ['chest', 'shoulders', 'triceps'], chestFly: ['chest'],
       latRaise: ['shoulders'], shoulderPress: ['shoulders', 'triceps'], dbShoulderPress: ['shoulders', 'triceps'],
-      reverseFly: ['rearDelt', 'traps'], facePull: ['rearDelt', 'traps'],
+      reverseFly: ['rearDelt', 'traps'], facePull: ['rearDelt', 'traps'], dbRevFly: ['rearDelt', 'traps'], floorPress: ['chest', 'triceps', 'shoulders'], birdDog: ['lowerBack', 'abs', 'glutes'],
       dbCurl: ['biceps', 'forearm'], cableCurl: ['biceps', 'forearm'], pushdown: ['triceps'], ohTriceps: ['triceps']
     },
     // 活動都會令啲位酸
