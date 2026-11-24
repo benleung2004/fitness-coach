@@ -72,6 +72,14 @@ done
 - **App 內問 AI（Gemini）**：`aiAsk()`／`aiContext()`／`AI_SYS`。Key 只存喺手機 `localStorage.fc_ai`，唔同步唔匯出。每次問答記喺 `aiLog`（`q` 問題、`reply`、`plan`、`used` 有冇用、`model`）；用咗嘅訓練 workout 有 `ai: <aiLog id>`。
   - **睇 log 時要檢查 `aiLog`**：AI 有冇違反原則（力竭、痛仲練、太多組、用咗做唔到嘅器材）、重量建議合唔合理。
   - 想 AI 以後跟你嘅建議 → 改 `js/config.js` 嘅 `coachNotes`（公開 repo，唔好寫個人數字）；模型預設 → `aiModel`
+- **讀完 `noteForClaude` 一定要寫回條**（用戶要求，等手機清空個格）：用最新 log 嘅 `noteUpd`，寫去私人 repo 嘅 `data/claude-ack.json`（女朋友：`data/claude-ack-her.json`），唔好改 `fitness.json`：
+  ```bash
+  NU=$(jq .noteUpd logs/fitness-log-$(date +%F).json); NOTE=$(jq -r .noteForClaude logs/fitness-log-$(date +%F).json)
+  SHA=$(gh api repos/benleung2004/fitness-data/contents/data/claude-ack.json --jq .sha 2>/dev/null)
+  jq -n --argjson nu "$NU" --arg note "$NOTE" --arg reply "一句講你做咗咩" '{noteUpd:$nu, note:$note, reply:$reply, at:(now*1000|floor)}' | base64 | tr -d '\n' > /tmp/ack.b64
+  gh api -X PUT repos/benleung2004/fitness-data/contents/data/claude-ack.json -f message="claude ack" -F content=@/tmp/ack.b64 ${SHA:+-f sha=$SHA}
+  ```
+  App 同步時見到 `noteUpd` 一樣（即係用戶之後冇再改過）先清空，並顯示「✅ Claude 已讀」同 `reply`
 - 手動補記（App 冇記到、用戶口述）：`logs/manual-notes.md`，分析時一齊睇
 
 ## 唔可以改嘅原則（來自原本 brief）

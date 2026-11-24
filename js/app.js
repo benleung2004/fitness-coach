@@ -46,7 +46,7 @@ function save() { persist(); scheduleSync(); }
 // ---------- 合併（同步同匯入共用）：唔會覆蓋，以較新嗰份為準 ----------
 function mergeData(R) {
   if (!R || typeof R !== 'object') return false;
-  const before = JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.gfRoster, S.shiftTimes, S.meals, S.gyms, S.gymSel, S.split, S.aiLog]);
+  const before = JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.gfRoster, S.shiftTimes, S.meals, S.gyms, S.gymSel, S.split, S.aiLog, S.claudeAck]);
   const dead = Object.assign({}, R.deleted || {}, S.deleted || {});
   S.deleted = dead;
   const stamp = x => x.upd || x.at || 0;
@@ -96,6 +96,7 @@ function mergeData(R) {
   S.insightSeen = Object.assign({}, R.dismissedInsights || {}, S.insightSeen || {});
   Object.entries(R.dismissedInsights || {}).forEach(([k, v]) => { if (v > S.insightSeen[k]) S.insightSeen[k] = v; });
   if ((R.noteUpd || 0) > (S.noteUpd || 0)) { S.noteForClaude = R.noteForClaude || ''; S.noteUpd = R.noteUpd; }
+  if (R.claudeAck && (R.claudeAck.at || 0) > ((S.claudeAck || {}).at || 0)) S.claudeAck = R.claudeAck;
   if ((R.reviewSeen || '') > (S.reviewSeen || '')) S.reviewSeen = R.reviewSeen;
   if ((R.lastBackup || '') > (S.lastBackup || '')) S.lastBackup = R.lastBackup;
   ['roster', 'gfRoster'].forEach(key => {
@@ -103,7 +104,7 @@ function mergeData(R) {
     Object.entries(R[key] || {}).forEach(([d, r]) => { const l = S[key][d]; if (r && (!l || (r.upd || 0) > (l.upd || 0))) S[key][d] = r; });
   });
   if (R.shiftTimes && R.shiftTimes.t && (R.shiftTimes.upd || 0) > ((S.shiftTimes || {}).upd || 0)) S.shiftTimes = { t: R.shiftTimes.t, upd: R.shiftTimes.upd };
-  return before !== JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.gfRoster, S.shiftTimes, S.meals, S.gyms, S.gymSel, S.split, S.aiLog]);
+  return before !== JSON.stringify([S.profile, S.days, S.workouts, S.activities, S.body, S.achieved, S.adjust, S.adjustLog, S.insightSeen, S.noteForClaude, S.deleted, S.reviewSeen, S.lastBackup, S.roster, S.gfRoster, S.shiftTimes, S.meals, S.gyms, S.gymSel, S.split, S.aiLog, S.claudeAck]);
 }
 
 // ---------- GitHub 私人 repo 同步（token 只存喺呢部機，唔會匯出） ----------
@@ -174,7 +175,7 @@ async function syncNow(manual) {
     }
     if (!ok) throw new Error('多部機同時同步，稍後再試');
     SY.lastSync = Date.now(); SY.lastError = ''; saveSY();
-    uploadMeals(); fetchPartner();
+    uploadMeals(); fetchPartner(); fetchAck();
     if (manual) toast('☁️ 同步完成');
   } catch (e) {
     SY.lastError = e.message === 'auth' ? 'Token 無效、過期，或者冇呢個 repo 嘅權限' : (e.message === 'Failed to fetch' ? '連唔到 GitHub' : e.message);
@@ -187,6 +188,20 @@ async function syncNow(manual) {
     const st = document.getElementById('syncStatus'); if (st) st.textContent = syncStatusText();
     if (syncAgain) { syncAgain = false; scheduleSync(); }
   }
+}
+// ---------- Claude 回條：Claude 讀完「想 Claude 改咩」就寫 data/claude-ack.json；留言冇再改過先會清空 ----------
+const ACK_PATH = USER === 'me' ? 'data/claude-ack.json' : `data/claude-ack-${USER}.json`;
+async function fetchAck() {
+  try {
+    const r = await ghFetch({ headers: { Accept: 'application/vnd.github.raw' } }, ACK_PATH);
+    if (!r.ok) return;
+    const a = JSON.parse(await r.text());
+    if (!a || !a.at || a.at <= ((S.claudeAck || {}).at || 0)) return;
+    const same = S.noteForClaude && a.noteUpd && a.noteUpd === (S.noteUpd || 0);
+    S.claudeAck = { at: a.at, reply: String(a.reply || '').slice(0, 1000), note: same ? S.noteForClaude : String(a.note || '').slice(0, 2000) };
+    if (same) { S.noteForClaude = ''; S.noteUpd = Date.now(); toast('✅ Claude 已讀你嘅留言'); }
+    save(); render();
+  } catch (e) {}
 }
 // ---------- 對方紀錄（只讀）：用同一個 token 讀對方嘅資料檔 ----------
 const PARTNER_KEY = 'fc_partner' + SFX;
@@ -2206,6 +2221,7 @@ function settingsModal() {
     <p class="small muted">匯出你所有紀錄（唔包括相片），連埋 App 自動分析出嚟嘅「教練觀察」、做得多／做得少、動作完成率。AirDrop 或者傳去 Mac 嘅 <code>Desktop/fitness-coach/logs/</code>，再喺 Claude Code 講「睇最新 log 幫我調整」。Claude 會睇晒全部紀錄，就算你乜都唔寫都會分析。</p>
     <label class="f">想 Claude 特別幫你改咩？（可以唔填）<textarea id="sNote" placeholder="例如：晚更好難去 gym，想改返工前 30 分鐘版本">${esc(S.noteForClaude)}</textarea></label>
     <div class="row between" style="margin:-4px 0 10px"><span class="small muted" id="sNoteState">打字會自動儲存</span><button class="btn sm" data-act="saveNote">💾 儲存</button></div>
+    ${S.claudeAck ? `<div class="card" style="margin:0 0 10px"><p class="small"><b>✅ Claude 已讀</b>（${esc(new Date(S.claudeAck.at).toLocaleDateString('zh-HK'))}）${S.claudeAck.reply ? '：' + esc(S.claudeAck.reply) : ''}</p>${S.claudeAck.note ? `<details><summary class="small muted">睇返你之前寫咗咩</summary><p class="small muted">${esc(S.claudeAck.note).replace(/\n/g, '<br>')}</p></details>` : ''}</div>` : ''}
     <button class="btn block blue" data-act="exportClaude">📤 匯出俾 Claude（JSON）</button>
     <div style="height:8px"></div>
     <button class="btn block ghost" data-act="copySummary">📋 複製文字摘要（可以直接貼俾 Claude）</button>
@@ -2228,7 +2244,7 @@ function exportData() {
     adjustments: adj(), adjustLog: S.adjustLog || [], dismissedInsights: S.insightSeen || {},
     weeklySummaries: weeklySummaries(12),
     roster: S.roster || {}, gfRoster: S.gfRoster || {}, shiftTimes: S.shiftTimes || null, shiftTimesEffective: shiftTimes(), plan7: planDays(today(), 7).map(p => ({ date: p.date, shift: p.shift, gfShift: (partnerShift(p.date) || {}).s || null, kind: p.kind, text: planText(p), together: togetherText(p.date) })),
-    meals: S.meals || [], gyms: S.gyms || [], gymSel: S.gymSel || null, split: S.split || null, aiLog: S.aiLog || [],
+    meals: S.meals || [], gyms: S.gyms || [], gymSel: S.gymSel || null, split: S.split || null, aiLog: S.aiLog || [], claudeAck: S.claudeAck || null,
     profile: S.profile, body: S.body, workouts: S.workouts, activities: S.activities, days: S.days, achieved: S.achieved
   };
 }
