@@ -224,3 +224,12 @@ a.btn { text-decoration: none; }
 .eq-tile img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; opacity: .45; background: var(--line); }
 .eq-tile.on { border-color: var(--accent); color: var(--text); }
 .eq-tile.on img { opacity: 1; }
+
+/* 🤖 問 AI：右下角浮動掣 + 對話 */
+.fab { position: fixed; right: 14px; bottom: calc(88px + env(safe-area-inset-bottom)); z-index: 25; width: 52px; height: 52px; border-radius: 50%;
+  border: 1px solid var(--accent); background: var(--card2); font-size: 26px; box-shadow: 0 4px 14px rgba(0,0,0,.45); }
+.timer:not(.hidden) ~ .fab { bottom: calc(160px + env(safe-area-inset-bottom)); }
+.chat { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.bub { padding: 10px 12px; border-radius: 14px; max-width: 88%; line-height: 1.5; font-size: 15px; }
+.bub.me { align-self: flex-end; background: #173a2c; color: var(--text); }
+.bub.ai { align-self: flex-start; background: var(--card2); }

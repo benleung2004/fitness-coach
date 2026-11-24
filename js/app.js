@@ -40,6 +40,13 @@ let S;
 try { S = Object.assign(blank(), JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { S = blank(); }
 // 第一次用：預設 gym（upd 0，同步落嚟嘅版本一定較新）
 if (!Array.isArray(S.gyms) || !S.gyms.length) { const g0 = C.defaultGym; S.gyms = g0 ? [{ id: g0.id, name: g0.name, eq: Object.fromEntries(g0.eq.map(k => [k, true])), upd: 0 }] : []; }
+// 第一次：自動加「屋企」（只有啞鈴），預設全部喺 gym，要自己揀分配先會用到
+if (C.homeSeed && !S.homeSeeded) {
+  const h = C.homeSeed;
+  if (!(S.deleted || {})[h.id] && !(S.gyms || []).some(g => g.id === h.id)) S.gyms.push({ id: h.id, name: h.name, eq: Object.fromEntries(h.eq.map(k => [k, true])), dbKg: h.dbKg, upd: 1 });
+  if (!S.split) S.split = { homeId: h.id, pct: 0, upd: 1 };
+  S.homeSeeded = true;
+}
 function persist() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('儲存失敗：手機空間可能唔夠'); } }
 function save() { persist(); scheduleSync(); }
 
@@ -1087,7 +1094,7 @@ function vRec(rec) {
     ${body}
     ${rec.minimum ? `<p class="small" style="margin-top:10px">🪫 ${esc(rec.minimum)}</p>` : ''}
     ${rec.extra.length ? `<ul class="clean small muted">${rec.extra.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-    <div class="row" style="margin-top:8px"><button class="btn sm ghost" data-act="editCheckin">改答案</button><button class="btn sm ghost" data-act="aiOpen">🤖 問 AI 調整今日</button></div>
+    <div class="row" style="margin-top:8px"><button class="btn sm ghost" data-act="editCheckin">改答案</button><button class="btn sm ghost" data-act="aiOpen">🤖 問 AI</button></div>
   </div>`;
 }
 
@@ -1344,6 +1351,7 @@ function startGym(t, mode) {
     let w = prog.w;
     if (mode === 'return' && w) w = roundTo(w * 0.85, C.exercises[r.key].inc);
     else if (A.deload[r.key] && w) w = roundTo(w * 0.9, C.exercises[r.key].inc);
+    w = dbCap(r.key, place === 'home' ? homeGym() : curGym(), w);
     items.push({ slot: s.key, key: r.key, subFrom: r.from || null, gymFrom: g.gymFrom || null, place: place || undefined, altUsed: false, reps, slotReps: s.reps, note: '',
                  sets: Array.from({ length: sets }, () => ({ w: w ?? '', r: '', rpe: '', done: false })) });
   });
@@ -1457,6 +1465,9 @@ function planItems(exs, pain, g = curGym()) {
     return { s, key: x.key, from: r.from, gymFrom: x.gymFrom };
   });
 }
+// 屋企啞鈴有上限（例如 2 × 10kg）：建議重量唔會超過，做多啲下就得
+const usesDb = k => ((C.exerciseEquip || {})[k] || []).some(r => r === 'dumbbells' || (Array.isArray(r) && r.length === 1 && r[0] === 'dumbbells'));
+const dbCap = (k, g, w) => (g && g.dbKg && usesDb(k) && w != null && w !== '' && w > g.dbKg) ? g.dbKg : w;
 // ---------- 🏢＋🏠 gym／屋企時間分配：gym 做器械，屋企用啞鈴／徒手做埋其餘 ----------
 const SPLITS = [[0, '🏢 全部喺 gym'], [25, 'gym 為主＋屋企少少'], [50, 'gym 一半＋屋企一半'], [75, '屋企為主＋gym 少少'], [100, '🏠 全部喺屋企']];
 const homeGym = () => { const h = (S.split || {}).homeId; return h ? (S.gyms || []).find(g => g.id === h) || null : null; };
@@ -1531,6 +1542,7 @@ function gymsModal() {
       <p class="small muted">撳相剔返呢間 gym 有嘅機（✓ = 有）。已揀 <b id="gCount">${n}</b> 樣。</p>
       ${cats.map(c => `<h3>${esc(c)}</h3><div class="eq-grid">${Object.entries(C.equipment).filter(([, e]) => e.cat === c).map(([k, e]) =>
         `<button class="eq-tile ${ed.eq[k] ? 'on' : ''}" data-act="eqToggle" data-k="${k}"><img src="${e.img}" alt="" loading="lazy"><span>${ed.eq[k] ? '✓ ' : ''}${esc(e.name)}</span></button>`).join('')}</div>`).join('')}
+      <label class="f">啞鈴最重幾 kg（一隻；冇就留空）<input id="gDb" type="number" inputmode="decimal" value="${esc(ed.dbKg ?? '')}" placeholder="例如 10"></label>
       <div class="card" style="margin-top:12px" id="gSum">${gymCoverage(ed)}</div>
       <button class="btn block" data-act="gymSaveName">✅ 完成</button>
       ${S.gyms.length > 1 ? '<div style="height:8px"></div><button class="btn block danger" data-act="gymDel">刪除呢間 gym</button>' : ''}`);
@@ -1596,12 +1608,13 @@ function aiContext() {
   return [base, '',
     '## 今日', `- 日期 ${d}（星期${WD[pd(d).getDay()]}）`, ci ? `- 問答：班次 ${(C.shifts[ci.shift] || {}).name || ci.shift}、精神 ${ci.energy}、瞓 ${ci.sleepQ}、痛 ${PAIN[ci.pain] || ci.pain}、有 ${ci.time} 分鐘、想做 ${ci.pref}` : '- 今日未答問答',
     x.sleepH != null ? `- 尋晚瞓 ${x.sleepH} 小時` : '', x.sore && Object.keys(x.sore.r || {}).length ? `- 今日酸：${Object.keys(x.sore.r).map(k => SORE[k]).join('、')}` : '',
-    '', '## 兩個地方', `- gym：${g ? g.name : '未揀'}`, h ? `- 屋企（${h.name}）有：${Object.keys(C.equipment).filter(k => h.eq[k]).map(k => C.equipment[k].name).join('、') || '乜都冇（只可以徒手）'}` : '- 未設定屋企器材',
+    '', '## 兩個地方', `- gym：${g ? g.name : '未揀'}`, h ? `- 屋企（${h.name}）有：${Object.keys(C.equipment).filter(k => h.eq[k]).map(k => C.equipment[k].name).join('、') || '乜都冇（只可以徒手）'}${h.dbKg ? `；啞鈴一隻最重 ${h.dbKg}kg（定重，唔可以加），重量唔夠就加次數、放慢落、或者單手做` : ''}` : '- 未設定屋企器材',
     splitOn() ? `- 用戶揀咗嘅分配：${splitLabel(splitPct(), ci && ci.time)}` : '',
     '', '## 教練（Claude）建議，一定要跟', ...(C.coachNotes || []).map(n => '- ' + n),
     '', '## 未來 7 日計劃', ...plan,
     '', '## 最近 14 日 gym', ...(wk.length ? wk : ['- 冇']), '', '## 最近 14 日帶氧／活動', ...(acts.length ? acts : ['- 冇']),
     ...(asked.length ? ['', '## 之前問過 AI', ...asked] : []),
+    ...((S.aiLog || []).some(a => a.date === d) ? ['', '## 今日對話（接住傾）', ...(S.aiLog || []).filter(a => a.date === d).slice(-6).flatMap(a => [`用戶：${a.q}`, `你：${a.reply}`])] : []),
     '', '## 動作清單（key｜名｜類型｜單位｜練邊度｜邊度做得到）— plan 只可以用呢度嘅 key', ...cat
   ].filter(v => v !== '').join('\n');
 }
@@ -1638,28 +1651,29 @@ async function aiAsk(q) {
   if (!txt) throw new Error('AI 冇回覆（可能被安全過濾）');
   return Object.assign(aiParse(txt.map(p => p.text || '').join('')), { model });
 }
-function aiModal(entry) {
-  if (!aiReady()) { modal(`<h2>🤖 問 AI</h2><p>未設定 Gemini API key。去「⚙️ 設定 → 🤖 App 內問 AI」貼上 key 先用得。</p><button class="btn block" data-act="openSettings">去設定</button><div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`); return; }
-  const e = entry || null;
-  const ideas = ['今日得 40 分鐘，gym 半個鐘、其餘返屋企做', '今日膊頭有啲痛，點練好？', '好攰，做個輕鬆版', 'gym 好多人，部機用唔到，幫我換'];
-  modal(`<h2>🤖 問 AI 調整今日</h2>
-    <p class="small muted">AI 會睇晒你嘅紀錄、gym 同屋企器材、原則同 Claude 嘅建議。問答會記錄，你之後叫 Claude 睇 log 時會檢查。</p>
-    <textarea id="aiQ" placeholder="例如：今日得 40 分鐘，gym 半個鐘、其餘返屋企做">${esc(UI.aiQ || '')}</textarea>
-    <div class="opts" style="margin:6px 0">${ideas.map(t => `<button class="opt" data-act="aiIdea" data-t="${esc(t)}">${esc(t)}</button>`).join('')}</div>
-    <button class="btn block" data-act="aiSend" id="aiSendBtn">送出</button>
-    ${e ? `<div class="card" style="margin-top:12px"><p>${esc(e.reply).replace(/\n/g, '<br>')}</p>
-      ${e.plan ? `<h3>📋 ${esc(e.plan.title)}</h3><ul class="clean">${e.plan.items.map(it => `<li>${exLink(it.key, esc(C.exercises[it.key].name))}${placeChip(it.place)} <span class="muted">${it.sets} × ${it.reps[0]}–${it.reps[1]}${C.exercises[it.key].unit === 'sec' ? ' 秒' : ''}</span>${it.note ? `<br><span class="small muted">${esc(it.note)}</span>` : ''}</li>`).join('')}</ul>
-        ${e.plan.cardioMin ? `<p class="small">🏃 最後帶氧 ${e.plan.cardioMin} 分鐘</p>` : ''}
-        ${S.active ? '<p class="small muted">而家有訓練進行緊，完成或者取消咗先可以用新計劃。</p>' : `<button class="btn block" data-act="aiUse" data-id="${e.id}">用呢個計劃開始訓練</button>`}` : ''}
-      <p class="small muted">${esc(e.model || '')} · 只供參考，有痛或者唔舒服就停。</p></div>` : ''}
-    <div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`);
+function aiPlanHtml(e) {
+  if (!e.plan) return '';
+  return `<div class="card" style="margin:4px 0 0"><b>📋 ${esc(e.plan.title)}</b><ul class="clean small">${e.plan.items.map(it => `<li>${exLink(it.key, esc(C.exercises[it.key].name))}${placeChip(it.place)} <span class="muted">${it.sets} × ${it.reps[0]}–${it.reps[1]}${C.exercises[it.key].unit === 'sec' ? ' 秒' : ''}</span>${it.note ? `<br><span class="muted">${esc(it.note)}</span>` : ''}</li>`).join('')}</ul>
+    ${e.plan.cardioMin ? `<p class="small">🏃 最後帶氧 ${e.plan.cardioMin} 分鐘</p>` : ''}
+    ${e.used ? '<p class="small muted">✅ 已用呢個計劃</p>' : S.active ? '<p class="small muted">而家有訓練進行緊，完成或者取消咗先用得。</p>' : `<button class="btn sm block" data-act="aiUse" data-id="${e.id}">▶️ 用呢個計劃開始訓練</button>`}</div>`;
+}
+function aiModal() {
+  if (!aiReady()) { modal(`<h2>🤖 問 AI</h2><p>未設定 Gemini API key。去「⚙️ 設定 → 🤖 App 內問 AI」貼上 key 先用得（免費，大約 2 分鐘）。</p><button class="btn block" data-act="openSettings">去設定</button><div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`); return; }
+  const today_ = (S.aiLog || []).filter(a => a.date === today()).slice(-10);
+  const ideas = ['今日得 40 分鐘，gym 半個鐘、其餘返屋企做', '膊頭有啲痛，今日點練？', '好攰，做個輕鬆版', '部機有人用緊，幫我換'];
+  modal(`<div class="row between" style="flex-wrap:nowrap"><h2 style="margin:0">🤖 問 AI</h2><button class="btn sm ghost" data-act="closeModal">✕</button></div>
+    <p class="small muted" style="margin:4px 0">AI 睇晒你嘅紀錄、gym 同屋企器材、原則同 Claude 嘅建議；問咩都得。對話會記錄，Claude 之後會檢查。只供參考，有痛就停。</p>
+    <div class="chat" id="aiChat">${today_.length ? today_.map(e => `<div class="bub me">${esc(e.q)}</div><div class="bub ai">${esc(e.reply).replace(/\n/g, '<br>')}${aiPlanHtml(e)}</div>`).join('')
+      : `<div class="bub ai">你好！想今日點練、換動作、問食咩都得 💪<div class="opts" style="margin-top:6px">${ideas.map(t => `<button class="opt" data-act="aiIdea" data-t="${esc(t)}">${esc(t)}</button>`).join('')}</div></div>`}</div>
+    <div class="row" style="flex-wrap:nowrap;gap:6px;align-items:flex-end"><textarea id="aiQ" rows="2" style="margin:0;flex:1" placeholder="問 AI…">${esc(UI.aiQ || '')}</textarea><button class="btn" data-act="aiSend" id="aiSendBtn" style="width:auto">送出</button></div>`);
+  const box = $('#modalBox'); if (box) box.scrollTop = box.scrollHeight;
 }
 function startAiPlan(e) {
   const t = nextTemplate(), pain = (day().checkin || {}).pain || 'none';
   const items = e.plan.items.map(it => {
-    const prog = progression(it.key, it.reps);
+    const prog = progression(it.key, it.reps), w = dbCap(it.key, it.place === 'home' ? homeGym() : curGym(), prog.w);
     return { slot: it.key, key: it.key, subFrom: null, gymFrom: null, place: splitOn() || it.place === 'home' ? it.place : undefined, altUsed: false, reps: it.reps, slotReps: it.reps, note: it.note || '',
-      sets: Array.from({ length: it.sets }, () => ({ w: prog.w ?? '', r: '', rpe: '', done: false })) };
+      sets: Array.from({ length: it.sets }, () => ({ w: w ?? '', r: '', rpe: '', done: false })) };
   });
   const cardio = e.plan.cardioMin ? Object.assign({ done: false }, gymCardio('normal'), { minutes: e.plan.cardioMin }) : null;
   S.active = { id: uid(), type: t, mode: 'normal', date: today(), startedAt: Date.now(), items, pain, gym: (curGym() || {}).name || '', ai: e.id,
@@ -2508,16 +2522,17 @@ const actions = {
   backupNow() { S.lastBackup = today(); save(); exportClaude(); render(); },
   exInfo(el) { exModal(el.dataset.k); },
   openGyms() { UI.gymEdit = null; gymsModal(); },
-  aiOpen() { const last = (S.aiLog || []).filter(a => a.date === today()).pop(); aiModal(last); },
+  aiOpen() { aiModal(); },
   aiIdea(el) { const t = $('#aiQ'); if (t) t.value = el.dataset.t; },
   async aiSend() {
     const q = (($('#aiQ') || {}).value || '').trim(); if (!q) { toast('寫低你想點先'); return; }
-    UI.aiQ = q; const b = $('#aiSendBtn'); if (b) { b.disabled = true; b.textContent = '🤖 諗緊…（大約 5–20 秒）'; }
+    UI.aiQ = q; const b = $('#aiSendBtn'); if (b) { b.disabled = true; b.textContent = '諗緊…'; }
+    const ch = $('#aiChat'); if (ch) { ch.insertAdjacentHTML('beforeend', `<div class="bub me">${esc(q)}</div><div class="bub ai muted">🤖 諗緊…（大約 5–20 秒）</div>`); const box = $('#modalBox'); if (box) box.scrollTop = box.scrollHeight; }
     try {
       const r = await aiAsk(q);
       const e = { id: uid(), at: Date.now(), upd: Date.now(), date: today(), q, reply: r.reply, plan: r.plan, model: r.model, used: false };
-      (S.aiLog = S.aiLog || []).push(e); S.aiLog = S.aiLog.slice(-100); UI.aiQ = ''; save(); aiModal(e);
-    } catch (err) { if (b) { b.disabled = false; b.textContent = '送出'; } toast('AI 出錯：' + String(err.message || err).slice(0, 120)); }
+      (S.aiLog = S.aiLog || []).push(e); S.aiLog = S.aiLog.slice(-100); UI.aiQ = ''; save(); aiModal();
+    } catch (err) { aiModal(); toast('AI 出錯：' + String(err.message || err).slice(0, 120)); }
   },
   aiUse(el) { const e = (S.aiLog || []).find(a => a.id === el.dataset.id); if (!e || !e.plan) return; if (S.active) { toast('而家有訓練進行緊'); return; } startAiPlan(e); toast('已用 AI 計劃開始 💪'); },
   aiSaveKey() {
@@ -2549,7 +2564,8 @@ const actions = {
   },
   gymSaveName() {
     const g = S.gyms.find(x => x.id === UI.gymEdit);
-    if (g) { const n = ($('#gName').value || '').trim(); if (n && n !== g.name) { g.name = n; g.upd = Date.now(); } }
+    if (g) { const n = ($('#gName').value || '').trim(); if (n && n !== g.name) { g.name = n; g.upd = Date.now(); }
+      const kg = num(($('#gDb') || {}).value); const v = kg > 0 && kg < 100 ? kg : undefined; if (v !== g.dbKg) { g.dbKg = v; g.upd = Date.now(); } }
     save(); UI.gymEdit = null; render(); gymsModal();
   },
   gymDel() {

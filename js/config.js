@@ -4,7 +4,7 @@
 // 改完記得將 sw.js 入面嘅 CACHE_VERSION 加 1，手機先會攞到新版。
 // =============================================================
 window.CONFIG = {
-  version: '1.19.1',
+  version: '1.20.0',
 
   // ---------- 每週 / 每日目標 ----------
   targets: {
@@ -318,6 +318,8 @@ window.CONFIG = {
   // 第一次用 App 嘅預設 gym（之後喺 App 改）
   defaultGym: { id: 'chocozap-taiwo', name: 'chocoZAP 太和',
     eq: ['legPress', 'chestPress', 'pecDeck', 'cable', 'assistPullup', 'backExt', 'abMachine', 'dumbbells', 'bench', 'treadmill', 'bike', 'elliptical'] },
+  // 第一次用自動加「屋企」（之後喺 App 改）；dbKg = 屋企啞鈴最重幾 kg
+  homeSeed: { id: 'home', name: '屋企', eq: ['dumbbells'], dbKg: 10 },
   // 「複製俾 Claude」嘅背景（唔好寫身高體重等個人數字，App 會由手機資料加）
   aiBackground: '健身新手（2026 年 11 月開始），返輪班（早更／辦公時間／夜更），喺香港住。目標係養成習慣（持續最重要）同增肌；體重正常偏輕，唔使減重，要食夠。唔鍾意熱同濕，唔識游水。',
   aiRules: ['頭 4 週唔做力竭、唔做保加利亞分腿蹲，目標 RPE 7（每組仲有大約 3 下力）', '有痛就停相關動作、改做替代動作；痛持續就睇醫生／物理治療師', 'gym 只做器械同啞鈴，平板支撐、捲腹留返屋企做', '夜更前後只做輕鬆行路同伸展', '用字鼓勵，唔好講「失敗」'],
@@ -421,6 +423,7 @@ window.CONFIG = {
 // 個人數據（身高、體重、體脂）只喺佢部手機輸入，唔寫入呢度。
 // =============================================================
 if (window.FC_USER === 'her') (function (C) {
+  C.homeSeed = null;
   C.user = 'her';
   C.partner = { name: '男朋友', path: 'data/fitness.json', url: '../' };
   C.goalText = '目標：減脂、身形實啲。每週 2–3 次 gym + 每日多行路；體重慢慢落（每週 0.3–0.5kg）就最理想。';
