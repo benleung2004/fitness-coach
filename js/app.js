@@ -2296,7 +2296,6 @@ function settingsModal() {
     <h3 style="margin-top:20px">🤖 想 Claude 改咩？</h3>
     <textarea id="sNote" placeholder="可以唔填，例如：晚更好難去 gym">${esc(S.noteForClaude)}</textarea>
     <div class="row between" style="margin:-4px 0 10px"><span class="small muted" id="sNoteState">打字會自動儲存</span><button class="btn sm" data-act="saveNote">💾 儲存</button></div>
-    ${S.claudeAck ? `<div class="card" style="margin:0 0 10px"><p class="small"><b>✅ Claude 已讀</b>（${esc(new Date(S.claudeAck.at).toLocaleDateString('zh-HK'))}）${S.claudeAck.reply ? '：' + esc(S.claudeAck.reply) : ''}</p>${S.claudeAck.note ? `<details><summary class="small muted">睇返你之前寫咗咩</summary><p class="small muted">${esc(S.claudeAck.note).replace(/\n/g, '<br>')}</p></details>` : ''}</div>` : ''}
     <details class="adv"><summary><b>⚙️ 進階設定</b></summary>
       <label class="f">訓練階段<select id="sPhase"><option value="auto" ${p.phaseOverride === 'auto' ? 'selected' : ''}>自動（建議）</option><option value="1" ${p.phaseOverride === '1' ? 'selected' : ''}>固定第 1 階段</option><option value="2" ${p.phaseOverride === '2' ? 'selected' : ''}>固定第 2 階段</option></select></label>
       <button class="btn block ghost" data-act="saveSettings">儲存階段</button>

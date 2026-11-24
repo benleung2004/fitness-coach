@@ -87,7 +87,7 @@ App 同步時會將結果顯示喺「飲食」頁（🤖 …），冇剔蛋白�
   jq -n --argjson nu "$NU" --arg note "$NOTE" --arg reply "一句講你做咗咩" '{noteUpd:$nu, note:$note, reply:$reply, at:(now*1000|floor)}' | base64 | tr -d '\n' > /tmp/ack.b64
   gh api -X PUT repos/benleung2004/fitness-data/contents/data/claude-ack.json -f message="claude ack" -f content="$(cat /tmp/ack.b64)" ${SHA:+-f sha=$SHA}
   ```
-  App 同步時見到 `noteUpd` 一樣（即係用戶之後冇再改過）先清空，並顯示「✅ Claude 已讀」同 `reply`
+  App 同步時見到 `noteUpd` 一樣（即係用戶之後冇再改過）先清空，彈一下「✅ Claude 已讀」提示（用戶唔想見到回覆卡）
 - 日子分界：凌晨 4 點前嘅紀錄計返前一日（`config.dayStartHour`，`today()`）
 - 屋企啞鈴：gym 有 `dbKg`（一隻上晒片最重）同 `plates`（[每片 kg, 片數]）；`dbWeights()` 計出做到嘅重量，`dbCap()` 建議重量唔會超過；單手動作（`DB_ONE`：高腳杯深蹲、單手划船）可以用晒兩隻嘅片
 - 快速記錄：撳咗變綠、再撳取消；activity 有 `q`（walk／commute／walkHome），水同瞓覺用 `days[*].qk` 記返原本數值
