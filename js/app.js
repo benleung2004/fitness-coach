@@ -1662,8 +1662,8 @@ function aiPrompt(full) {
 const AI_KEY = 'fc_ai';
 // 香港用得、准網頁直接連（CORS）嘅 AI；Gemini API 唔支援香港
 const AI_PROVIDERS = {
-  openrouter: { name: 'OpenRouter（免費）', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'google/gemma-4-31b-it:free', fallback: 'openrouter/free', site: 'openrouter.ai' },
   deepseek: { name: 'DeepSeek', url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-flash', site: 'platform.deepseek.com' },
+  openrouter: { name: 'OpenRouter（免費）', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'google/gemma-4-31b-it:free', fallback: 'openrouter/free', site: 'openrouter.ai' },
   qwen: { name: '阿里雲 Qwen（國際版）', url: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions', model: 'qwen-plus', site: 'modelstudio.console.alibabacloud.com' }
 };
 const aiCfg = () => { try { return JSON.parse(localStorage.getItem(AI_KEY) || '{}'); } catch (e) { return {}; } };
@@ -2383,9 +2383,9 @@ function settingsModal() {
       ${SY.token ? '<div style="height:8px"></div><button class="btn sm danger" data-act="disconnectSync">喺呢部機中斷同步</button>' : ''}
       <h3 style="margin-top:16px">🤖 問 AI</h3>
       <p class="small muted">${aiReady() ? `✅ 已設定（${esc(aiProv().name)}）。` : ''}Key 只存喺呢部機。</p>
-      <label class="f">用邊間<select id="aiProv">${Object.entries(AI_PROVIDERS).map(([k, v]) => `<option value="${k}" ${(aiCfg().provider || 'openrouter') === k ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select></label>
+      <label class="f">用邊間<select id="aiProv">${Object.entries(AI_PROVIDERS).map(([k, v]) => `<option value="${k}" ${(aiCfg().provider || 'deepseek') === k ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select></label>
       <label class="f">API key<input id="aiKey" type="password" autocomplete="off" autocapitalize="off" placeholder="${aiReady() ? '已設定（想換先填）' : 'sk-…'}"></label>
-      <label class="f">模型（留空 = 預設）<input id="aiModel" value="${esc(aiCfg().model || '')}" placeholder="${esc((aiProv() || AI_PROVIDERS.openrouter).model)}" autocapitalize="off" autocorrect="off"></label>
+      <label class="f">模型（留空 = 預設）<input id="aiModel" value="${esc(aiCfg().model || '')}" placeholder="${esc((aiProv() || AI_PROVIDERS.deepseek).model)}" autocapitalize="off" autocorrect="off"></label>
       <div class="grid2"><button class="btn" data-act="aiSaveKey">儲存</button>${aiReady() ? '<button class="btn danger" data-act="aiClearKey">刪除 key</button>' : '<span></span>'}</div>
       <h3 style="margin-top:16px">👫 ${esc(C.partner.name)}嘅連結</h3>
       <div class="row" style="flex-wrap:nowrap;gap:6px"><input readonly value="${esc(partnerUrl())}" style="margin:0;flex:1;min-width:0"><button class="btn sm" data-act="copyPartnerUrl">複製</button></div>
