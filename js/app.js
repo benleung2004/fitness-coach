@@ -1663,7 +1663,6 @@ const AI_KEY = 'fc_ai';
 // 香港用得、准網頁直接連（CORS）嘅 AI；Gemini API 唔支援香港
 const AI_PROVIDERS = {
   deepseek: { name: 'DeepSeek', url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-flash', site: 'platform.deepseek.com' },
-  openrouter: { name: 'OpenRouter（免費）', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'google/gemma-4-31b-it:free', fallback: 'openrouter/free', site: 'openrouter.ai' },
   qwen: { name: '阿里雲 Qwen（國際版）', url: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions', model: 'qwen-plus', site: 'modelstudio.console.alibabacloud.com' }
 };
 const aiCfg = () => { try { return JSON.parse(localStorage.getItem(AI_KEY) || '{}'); } catch (e) { return {}; } };
@@ -1711,15 +1710,17 @@ const AI_SYS = `你係用戶嘅健身教練，喺佢自己整嘅健身 App 入�
 重量建議參考「每個動作最近一次」同「最近 14 日 gym」，寫喺 note（例如「試 30kg」）；屋企啞鈴重量要按佢有嘅器材。
 寫住「未記錄」或者冇出現嘅資料＝用戶冇輸入，唔好當做 0、唔好話佢冇做、唔好叫佢補記，只根據有記錄嘅資料講。
 如果建議今日唔去 gym，可以出帶氧／活動計劃（type "activity"，kind 只可以係 walk、cycle、hike、run、other）。
-只回覆一個 JSON 物件，唔好有其他字：{"reply":"俾用戶睇嘅解釋（3–6 句）","plan":null 或 {"type":"gym","title":"計劃名","warmup":true,"items":[{"key":"legPress","place":"gym","sets":2,"reps":[10,12],"note":"重量／提醒"}],"cardioMin":10} 或 {"type":"activity","title":"計劃名","kind":"walk","minutes":30,"note":"點做"}}`;
+用戶講咗佢食咗咩、做咗咩運動、飲水、瞓覺、步數或者體重（或者叫你記錄），就放入 "log"，App 會自動記入；冇就 "log":null。只記用戶講咗嘅嘢，唔好估；運動唔知幾多分鐘就唔好記，喺 reply 問返佢；「動作清單／今日」已經有嘅唔好重複記。冇放入 log 就唔好講「記低咗」。App 記唔到嘅（例如器材、左右力度）就話佢知 Claude 檢討時會睇到對話。
+log 格式：{"meals":[{"date":"YYYY-MM-DD","slot":"breakfast|lunch|dinner|snack","note":"食咗咩"}],"activities":[{"date":"YYYY-MM-DD","kind":"walk|cycle|hike|run|badminton|recovery|other","minutes":20,"intensity":"light|moderate|vigorous","commute":false,"note":""}],"day":{"date":"YYYY-MM-DD","waterMl":當日總數,"sleepH":7,"steps":8000},"weight":63.5}（唔使嘅欄位唔好寫）
+只回覆一個 JSON 物件，唔好有其他字：{"reply":"俾用戶睇嘅解釋（3–6 句）","log":null 或者上面格式,"plan":null 或 {"type":"gym","title":"計劃名","warmup":true,"items":[{"key":"legPress","place":"gym","sets":2,"reps":[10,12],"note":"重量／提醒"}],"cardioMin":10} 或 {"type":"activity","title":"計劃名","kind":"walk","minutes":30,"note":"點做"}}`;
 function aiParse(t) {
   t = String(t || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
   const o = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
-  const reply = String(o.reply || '').slice(0, 3000);
+  const reply = String(o.reply || '').slice(0, 3000), log = o.log && typeof o.log === 'object' ? o.log : null;
   let plan = null;
   if (o.plan && o.plan.type === 'activity' && ACT_KINDS[o.plan.kind]) {
     const m = Math.round(Number(o.plan.minutes) || 30);
-    return { reply, plan: { type: 'activity', title: String(o.plan.title || ACT_KINDS[o.plan.kind]).slice(0, 60), kind: o.plan.kind, minutes: Math.min(240, Math.max(5, m)), note: String(o.plan.note || '').slice(0, 200) } };
+    return { reply, log, plan: { type: 'activity', title: String(o.plan.title || ACT_KINDS[o.plan.kind]).slice(0, 60), kind: o.plan.kind, minutes: Math.min(240, Math.max(5, m)), note: String(o.plan.note || '').slice(0, 200) } };
   }
   if (o.plan && Array.isArray(o.plan.items)) {
     const items = o.plan.items.filter(it => it && C.exercises[it.key]).slice(0, 10).map(it => {
@@ -1729,27 +1730,56 @@ function aiParse(t) {
     });
     if (items.length) plan = { type: 'gym', warmup: o.plan.warmup !== false, title: String(o.plan.title || 'AI 今日計劃').slice(0, 60), items, cardioMin: Math.min(40, Math.max(0, Math.round(Number(o.plan.cardioMin) || 0))) };
   }
-  return { reply, plan };
+  return { reply, log, plan };
+}
+// AI 幫手記錄：食物、活動、飲水／瞓覺／步數、體重（只限最近 7 日）
+function aiApplyLog(L) {
+  if (!L) return [];
+  const t = today(), okD = d => (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= t && d >= addDays(t, -7)) ? d : t, done = [];
+  (Array.isArray(L.meals) ? L.meals : []).slice(0, 6).forEach(m => {
+    const note = String((m && m.note) || '').trim().slice(0, 200); if (!note) return;
+    const date = okD(m.date), slot = MEAL_SLOTS[m.slot] ? m.slot : mealSlotNow();
+    if ((S.meals || []).some(x => x.date === date && x.note === note && !(S.deleted || {})[x.id])) return;
+    const ml = { id: uid(), date, at: Date.now(), slot, note, text: true, up: false, upd: Date.now(), protein: mealProtein(note), by: 'ai' };
+    (S.meals = S.meals || []).push(ml); syncProtein(date);
+    done.push(`${MEAL_SLOTS[slot]} ${note}`);
+  });
+  (Array.isArray(L.activities) ? L.activities : []).slice(0, 4).forEach(a => {
+    const minutes = Math.round(Number(a && a.minutes)); if (!a || !ACT_KINDS[a.kind] || !(minutes > 0 && minutes <= 300)) return;
+    const date = okD(a.date);
+    if (S.activities.some(x => x.date === date && x.kind === a.kind && x.minutes === minutes)) return;
+    const n = { id: uid(), at: Date.now(), date, kind: a.kind, minutes, intensity: INTENSITY[a.intensity] ? a.intensity : 'light', commute: !!a.commute, note: String(a.note || '').slice(0, 200), by: 'ai' };
+    const e = actEstimate(n); if (e.kmh) n.kmh = e.kmh; if (e.kcal) n.kcal = e.kcal;
+    S.activities.push(n); done.push(`${ACT_KINDS[a.kind]} ${minutes} 分鐘`);
+  });
+  const D = L.day && typeof L.day === 'object' ? L.day : null;
+  if (D) {
+    const date = okD(D.date), x = day(date), w = Math.round(Number(D.waterMl)), sl = Number(D.sleepH), st = Math.round(Number(D.steps));
+    if (w > 0 && w <= 8000 && w !== x.waterMl) { x.waterMl = w; touch(x, 'waterMl'); done.push(`飲水 ${w}ml`); }
+    if (sl > 0 && sl <= 16 && Math.round(sl * 2) / 2 !== x.sleepH) { x.sleepH = Math.round(sl * 2) / 2; touch(x, 'sleepH'); done.push(`瞓 ${x.sleepH} 小時`); }
+    if (st >= 0 && st <= 80000 && D.steps != null && D.steps !== '' && st !== x.steps) { x.steps = st; touch(x, 'steps'); done.push(`${st} 步`); }
+  }
+  const kg = Number(L.weight);
+  const exB = S.body.find(b => b.date === t);
+  if (kg >= 30 && kg <= 200 && !(exB && exB.weight === kg)) {
+    const ex = exB;
+    if (ex) { ex.weight = kg; ex.upd = Date.now(); } else S.body.push({ id: uid(), date: t, weight: kg, waist: null, upd: Date.now() });
+    done.push(`體重 ${kg}kg`);
+  }
+  return done;
 }
 async function aiCall(user) {
-  const c = aiCfg(), P = aiProv(), main = (c.model || P.model).trim();
-  const models = P.fallback && P.fallback !== main ? [main, main, P.fallback] : [main, main];
-  let err = null, bad = '';
-  for (const model of models) {
-    if (model === bad) continue; // 出錯嘅模型唔再試，直接轉後備
+  const c = aiCfg(), P = aiProv(), model = (c.model || P.model).trim();
+  for (let t = 0; t < 2; t++) {
     const r = await fetch(P.url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + c.key },
       body: JSON.stringify({ model, temperature: 0.4, max_tokens: 3000, response_format: { type: 'json_object' },
         messages: [{ role: 'system', content: AI_SYS }, { role: 'user', content: user }] }) });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      err = new Error((j.error && (j.error.message || j.error)) || j.message || ('HTTP ' + r.status));
-      if (r.status === 401 || !P.fallback) throw err; // key 錯就唔使再試
-      bad = model; continue;
-    }
+    if (!r.ok) throw new Error((j.error && (j.error.message || j.error)) || j.message || ('HTTP ' + r.status));
     const txt = ((((j.choices || [])[0] || {}).message || {}).content || '').trim();
-    if (txt) { try { return Object.assign(aiParse(txt), { model: j.model || model }); } catch (e) { err = new Error('AI 回覆格式唔啱'); } }
+    if (txt) return Object.assign(aiParse(txt), { model });
   }
-  throw err || new Error('AI 冇回覆，再試一次');
+  throw new Error('AI 冇回覆，再試一次');
 }
 const aiAsk = q => aiCall(aiContext() + '\n\n## 用戶而家問（用 JSON 回覆）\n' + q);
 // 🌅 每日小檢討：過咗 4 點第一次開 App 自動做一次（有 AI key 先做）
@@ -1784,7 +1814,7 @@ function aiPlanHtml(e) {
 }
 const hhmm = t => { const d = new Date(t); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
 const daySep = d => `<div class="daysep">—— ${fmtDate(d)} ——</div>`;
-const chatHtml = e => `<div class="bub me">${esc(e.q)}<div class="btime">${hhmm(e.at)}</div></div><div class="bub ai">${esc(e.reply).replace(/\n/g, '<br>')}${aiPlanHtml(e)}<div class="btime">${hhmm(e.at)}</div></div>`;
+const chatHtml = e => `<div class="bub me">${esc(e.q)}<div class="btime">${hhmm(e.at)}</div></div><div class="bub ai">${esc(e.reply).replace(/\n/g, '<br>')}${e.logged ? `<p class="small" style="margin:6px 0 0">📝 已記入 App：${e.logged.map(esc).join('、')}</p>` : ''}${aiPlanHtml(e)}<div class="btime">${hhmm(e.at)}</div></div>`;
 function aiModal() {
   if (!aiReady()) { modal(`<h2>🤖 問 AI</h2><p>未設定 AI key：去「⚙︎ 設定 → ⚙️ 進階設定 → 問 AI」貼上 key。</p><button class="btn block" data-act="openSettings">去設定</button><div style="height:8px"></div><button class="btn block ghost" data-act="closeModal">關閉</button>`); return; }
   const t = today(), log = (S.aiLog || []).slice().sort((a, b) => a.at - b.at);
@@ -2707,7 +2737,8 @@ const actions = {
     try {
       const r = await aiAsk(q);
       const e = { id: uid(), at: Date.now(), upd: Date.now(), date: today(), q, reply: r.reply, plan: r.plan, model: r.model, used: false };
-      (S.aiLog = S.aiLog || []).push(e); UI.aiQ = ''; save(); aiModal();
+      const logged = aiApplyLog(r.log); if (logged.length) e.logged = logged;
+      (S.aiLog = S.aiLog || []).push(e); UI.aiQ = ''; save(); render(); aiModal();
     } catch (err) { aiModal(); toast('AI 出錯：' + String(err.message || err).slice(0, 120)); }
   },
   aiUse(el) {
