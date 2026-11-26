@@ -1710,8 +1710,9 @@ const AI_SYS = `你係用戶嘅健身教練，喺佢自己整嘅健身 App 入�
 重量建議參考「每個動作最近一次」同「最近 14 日 gym」，寫喺 note（例如「試 30kg」）；屋企啞鈴重量要按佢有嘅器材。
 寫住「未記錄」或者冇出現嘅資料＝用戶冇輸入，唔好當做 0、唔好話佢冇做、唔好叫佢補記，只根據有記錄嘅資料講。
 如果建議今日唔去 gym，可以出帶氧／活動計劃（type "activity"，kind 只可以係 walk、cycle、hike、run、other）。
-用戶講咗佢食咗咩、做咗咩運動、飲水、瞓覺、步數或者體重（或者叫你記錄），就放入 "log"，App 會自動記入；冇就 "log":null。只記用戶講咗嘅嘢，唔好估；運動唔知幾多分鐘就唔好記，喺 reply 問返佢；「動作清單／今日」已經有嘅唔好重複記。冇放入 log 就唔好講「記低咗」。App 記唔到嘅（例如器材、左右力度）就話佢知 Claude 檢討時會睇到對話。
-log 格式：{"meals":[{"date":"YYYY-MM-DD","slot":"breakfast|lunch|dinner|snack","note":"食咗咩"}],"activities":[{"date":"YYYY-MM-DD","kind":"walk|cycle|hike|run|badminton|recovery|other","minutes":20,"intensity":"light|moderate|vigorous","commute":false,"note":""}],"day":{"date":"YYYY-MM-DD","waterMl":當日總數,"sleepH":7,"steps":8000},"weight":63.5}（唔使嘅欄位唔好寫）
+用戶講咗佢食咗咩、做咗咩運動、飲水、瞓覺、步數或者體重（或者叫你記錄），就放入 "log"，App 會自動記入；冇就 "log":null。只記用戶講咗嘅嘢，唔好估；運動唔知幾多分鐘就唔好記，喺 reply 問返佢；「動作清單／今日」已經有嘅唔好重複記。冇放入 log 就唔好講「記低咗」。
+飲品（水、茶、檸茶、奶、豆奶、湯，酒唔計）一定要計入飲水：用 day.waterAddMl 寫今次飲多咗幾多 ml（App 會自己加落今日總數）；用戶講今日總數先用 day.waterMl。冇講份量就按常見份量估（一支約 500ml、茶餐廳凍飲約 400ml、一杯／一罐約 330ml、一碗湯約 250ml），喺 reply 講係估。食物入面嘅飲品照樣記喺 meals，同時計入飲水。App 記唔到嘅（例如器材、左右力度）就話佢知 Claude 檢討時會睇到對話。
+log 格式：{"meals":[{"date":"YYYY-MM-DD","slot":"breakfast|lunch|dinner|snack","note":"食咗咩"}],"activities":[{"date":"YYYY-MM-DD","kind":"walk|cycle|hike|run|badminton|recovery|other","minutes":20,"intensity":"light|moderate|vigorous","commute":false,"note":""}],"day":{"date":"YYYY-MM-DD","waterAddMl":900,"waterMl":當日總數（只係用戶講總數先用）,"sleepH":7,"steps":8000},"weight":63.5}（唔使嘅欄位唔好寫）
 只回覆一個 JSON 物件，唔好有其他字：{"reply":"俾用戶睇嘅解釋（3–6 句）","log":null 或者上面格式,"plan":null 或 {"type":"gym","title":"計劃名","warmup":true,"items":[{"key":"legPress","place":"gym","sets":2,"reps":[10,12],"note":"重量／提醒"}],"cardioMin":10} 或 {"type":"activity","title":"計劃名","kind":"walk","minutes":30,"note":"點做"}}`;
 function aiParse(t) {
   t = String(t || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
@@ -1755,7 +1756,9 @@ function aiApplyLog(L) {
   const D = L.day && typeof L.day === 'object' ? L.day : null;
   if (D) {
     const date = okD(D.date), x = day(date), w = Math.round(Number(D.waterMl)), sl = Number(D.sleepH), st = Math.round(Number(D.steps));
+    const add = Math.round(Number(D.waterAddMl));
     if (w > 0 && w <= 8000 && w !== x.waterMl) { x.waterMl = w; touch(x, 'waterMl'); done.push(`飲水 ${w}ml`); }
+    else if (add > 0 && add <= 3000) { x.waterMl = Math.min(8000, (x.waterMl || 0) + add); touch(x, 'waterMl'); done.push(`飲水 +${add}ml（今日 ${x.waterMl}ml）`); }
     if (sl > 0 && sl <= 16 && Math.round(sl * 2) / 2 !== x.sleepH) { x.sleepH = Math.round(sl * 2) / 2; touch(x, 'sleepH'); done.push(`瞓 ${x.sleepH} 小時`); }
     if (st >= 0 && st <= 80000 && D.steps != null && D.steps !== '' && st !== x.steps) { x.steps = st; touch(x, 'steps'); done.push(`${st} 步`); }
   }

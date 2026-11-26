@@ -76,7 +76,7 @@ App 同步時會將結果顯示喺「飲食」頁（🤖 …），冇剔蛋白�
 - 屋企啞鈴動作（唔使凳）：`dbRow`、`floorPress`、`dbRevFly`、企住做嘅 `dbShoulderPress`；冇器材可以換先用徒手（`pushup`、`birdDog`），見 `gymResolve()`
 - 每日欄位改動時間：`days[*].u`（例如 `waterMl`、`protein`、`sleepH`、`c.<格>`），同步以最後改嗰次為準
 - **App 內問 AI（DeepSeek 預設，實際每次約 6k token、< 0.01 美金；或阿里雲 Qwen 國際版。Gemini、Groq 唔支援香港；OpenRouter 免費模型試過唔夠聰明，已移除）**：`aiCall()`／`aiContext()`／`dayFacts()`／`AI_SYS`，OpenAI 格式 + JSON 模式。Key 只存喺手機 `localStorage.fc_ai`，唔同步唔匯出。冇輸入嘅資料寫「未記錄」，AI 唔可以當 0。每次問答記喺 `aiLog`（`q` 問題、`reply`、`plan`、`used` 有冇用、`model`）；用咗嘅訓練 workout 有 `ai: <aiLog id>`。
-  - **AI 幫手記錄**：用戶喺問 AI 講食咗咩、做咗咩運動、飲水、瞓覺、步數、體重，AI 回覆 JSON 嘅 `log` → `aiApplyLog()` 自動寫入（只限最近 7 日，重複唔記），meals／activities 有 `by: 'ai'`，`aiLog` 入面 `logged` 列出記咗咩。檢討時要核對 AI 有冇記錯
+  - **AI 幫手記錄**：用戶喺問 AI 講食咗咩、做咗咩運動、飲水、瞓覺、步數、體重，AI 回覆 JSON 嘅 `log` → `aiApplyLog()` 自動寫入（飲品計入飲水：`day.waterAddMl` 加落今日、`day.waterMl` = 用戶講嘅總數；冇份量 AI 會估）（只限最近 7 日，重複唔記），meals／activities 有 `by: 'ai'`，`aiLog` 入面 `logged` 列出記咗咩。檢討時要核對 AI 有冇記錯
   - **🌅 每日小檢討**：過咗 4 點第一次開 App（同步完）自動做一次，`aiLog` 入面 `type: 'daily'`；計劃可以係 gym（撳開始直接入引導模式）或者 activity
   - 換動作頁：`muscleModal()`（同部位替代有相、按 gym／屋企器材篩）；「🤖 AI 幫我揀」= `mmAsk()`，`aiLog` 入面 `type: 'swap'`，AI 揀嘅動作一定要練同一個主要部位先顯示
   - workout 有 `skipped: true` 嘅動作 = 用戶撳咗跳過；`active.warm.skip`、`cardio.skip` = 跳過熱身／帶氧
